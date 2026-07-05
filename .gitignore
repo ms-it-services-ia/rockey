@@ -1,0 +1,33 @@
+# Java / Maven
+java-gateway/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Python
+python-agent/__pycache__/
+python-agent/**/__pycache__/
+*.pyc
+python-agent/.venv/
+python-agent/venv/
+python-agent/*.egg-info/
+python-agent/dist/
+python-agent/build/
+.pytest_cache/
+.ruff_cache/
+
+# Environment
+.env
+.env.local
+
+# Docker
+*.pid
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+Thumbs.db
+*.swp
+*.log

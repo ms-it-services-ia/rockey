@@ -1,0 +1,15 @@
+# Static in-memory fallback (constitution VI.3), used only when a pgvector query exceeds
+# TIMEOUT_PGVECTOR (5s). Mirrors the retailer's key thresholds from the Drive-sourced policy
+# so a transient pgvector slowdown degrades gracefully instead of failing the request.
+# Every use of this fallback MUST be alert-logged (see rag_fallback.py).
+vinted:
+  return_window_days_domestic: 21
+  return_window_days_international: 30
+  auto_refund_max_amount: 80.00
+  manual_review_max_amount: 200.00
+  change_of_mind_fee: 3.90
+  non_returnable_types:
+    - piece_unique
+    - destockage
+    - bijou
+    - ceinture
