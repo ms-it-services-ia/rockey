@@ -10,3 +10,7 @@ vinted:
   return_window_days_international: 30
   auto_refund_max_amount: 80.00
   manual_review_max_amount: 200.00
+  # Legal (quality) warranty period for complaints, per spec User Story 5 edge case:
+  # a complaint filed after the standard return window but within this longer period is
+  # still eligible, but must escalate with an explanatory note rather than auto-resolve.
+  legal_warranty_days: 730

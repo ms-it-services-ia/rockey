@@ -26,6 +26,8 @@ _REASON_LABELS = {
     "qualification_unclear": "unable to determine the customer's request after 2 clarifications",
     "service_unavailable": "a backend service was unavailable",
     "amount_above_threshold": "the amount exceeds the auto-refund threshold",
+    "legal_warranty": "the complaint is past the standard return window but within the legal warranty period",
+    "repeated_complaint": "the customer has complained about this item before",
     "technical_action_failed": "a technical error occurred while finalizing the action",
 }
 

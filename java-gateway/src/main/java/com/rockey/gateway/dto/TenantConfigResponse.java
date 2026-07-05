@@ -7,6 +7,7 @@ public record TenantConfigResponse(
         String agentTone,
         String agentFormality,
         String agentLanguage,
+        boolean channelEmailActive,
         boolean channelSlackActive,
         String channelSlackChannel,
         String driveFolderId) {}

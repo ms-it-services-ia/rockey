@@ -15,12 +15,19 @@ async def decision_node(state: dict) -> dict:
     if (state.get("action_result") or {}).get("auto_approvable"):
         return {**state, "decision": "auto", "current_state": "DECISION"}
 
-    # Eligible, but above the auto-refund threshold — mandatory escalation
-    # (constitution II.2/V.4), never a manual override by the agent itself.
+    # Eligible, but not auto-approvable — mandatory escalation (constitution II.2/V.4),
+    # never a manual override by the agent itself. Two distinct causes share this branch:
+    # a return/complaint above the auto-refund threshold, or a complaint past the standard
+    # return window but still within the legal warranty (spec US5 edge case) — the
+    # `appliedRule` from EligibilityService tells us which, so the escalation summary
+    # (escalation.py's _REASON_LABELS) states the real reason rather than always blaming
+    # the amount.
+    applied_rule = state.get("applied_rule") or ""
+    escalation_reason = "legal_warranty" if applied_rule.startswith("legal_warranty") else "amount_above_threshold"
     return {
         **state,
         "decision": "escalated",
         "escalated": True,
-        "escalation_reason": "amount_above_threshold",
+        "escalation_reason": escalation_reason,
         "current_state": "DECISION",
     }

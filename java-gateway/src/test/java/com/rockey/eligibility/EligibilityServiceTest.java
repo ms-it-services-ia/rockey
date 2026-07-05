@@ -91,4 +91,40 @@ class EligibilityServiceTest {
         assertThat(result.eligible()).isTrue();
         assertThat(result.autoApprovable()).isFalse();
     }
+
+    @Test
+    void complaint_withinReturnWindow_belowThreshold_isEligibleAndNotEscalated() throws Exception {
+        Order order = buildOrder(new BigDecimal("68.00"), LocalDate.now().minusDays(15));
+        when(orderRepository.findByIdAndTenantId("CMD-2026-00001", "vinted")).thenReturn(Optional.of(order));
+
+        var result = eligibilityService.checkComplaintEligibility("vinted", "CMD-2026-00001", false);
+
+        assertThat(result.eligible()).isTrue();
+        assertThat(result.requiresEscalation()).isFalse();
+    }
+
+    @Test
+    void complaint_pastReturnWindowButWithinLegalWarranty_isEligibleButMustEscalate() throws Exception {
+        // spec US5 edge case: complaint filed after the standard return window -> legal
+        // warranty applies -> escalation with a note, not an automatic refusal.
+        Order order = buildOrder(new BigDecimal("68.00"), LocalDate.now().minusDays(45));
+        when(orderRepository.findByIdAndTenantId("CMD-2026-00001", "vinted")).thenReturn(Optional.of(order));
+
+        var result = eligibilityService.checkComplaintEligibility("vinted", "CMD-2026-00001", false);
+
+        assertThat(result.eligible()).isTrue();
+        assertThat(result.requiresEscalation()).isTrue();
+        assertThat(result.reason()).contains("legal warranty");
+    }
+
+    @Test
+    void complaint_pastLegalWarranty_isIneligible() throws Exception {
+        Order order = buildOrder(new BigDecimal("68.00"), LocalDate.now().minusDays(800));
+        when(orderRepository.findByIdAndTenantId("CMD-2026-00001", "vinted")).thenReturn(Optional.of(order));
+
+        var result = eligibilityService.checkComplaintEligibility("vinted", "CMD-2026-00001", false);
+
+        assertThat(result.eligible()).isFalse();
+        assertThat(result.reason()).contains("expired");
+    }
 }

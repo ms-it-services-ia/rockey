@@ -15,6 +15,7 @@ async def verification_node(state: dict) -> dict:
             tenant_id=state["tenant_id"],
             reason=state.get("reason", "other"),
             article_data=article_data,
+            request_type=state.get("intent", "return"),
         )
     except TechnicalFailure:
         return {

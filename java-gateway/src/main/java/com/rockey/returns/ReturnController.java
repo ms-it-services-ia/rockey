@@ -25,7 +25,8 @@ public class ReturnController {
             BigDecimal amount,
             String channel,
             String sessionId,
-            String appliedRule) {}
+            String appliedRule,
+            String type) {}
 
     public record CreateReturnResponse(String returnId, String labelUrl) {}
 
@@ -41,7 +42,8 @@ public class ReturnController {
                         request.amount(),
                         request.channel(),
                         request.sessionId(),
-                        request.appliedRule());
+                        request.appliedRule(),
+                        request.type() != null ? request.type() : "return");
         return ResponseEntity.ok(new CreateReturnResponse(result.returnId(), result.labelUrl()));
     }
 }

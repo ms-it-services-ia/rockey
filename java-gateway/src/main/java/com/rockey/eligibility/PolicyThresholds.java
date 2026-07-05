@@ -6,4 +6,5 @@ public record PolicyThresholds(
         int returnWindowDaysDomestic,
         int returnWindowDaysInternational,
         BigDecimal autoRefundMaxAmount,
-        BigDecimal manualReviewMaxAmount) {}
+        BigDecimal manualReviewMaxAmount,
+        int legalWarrantyDays) {}

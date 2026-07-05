@@ -49,12 +49,38 @@ async def health():
     return {"status": "ok"}
 
 
+_SUPPORTED_CHANNELS = {"web", "email"}
+
+
+def unavailable_channel_reply(tenant_config: dict, channel: str) -> str | None:
+    """Spec User Story 7 edge case: 'a channel becomes unavailable -> customer sees an
+    error message with an alternative channel suggested'. Returns None when the channel
+    is fine to proceed on."""
+    if channel not in _SUPPORTED_CHANNELS or (
+        channel == "email" and not tenant_config.get("channelEmailActive", False)
+    ):
+        return (
+            "Sorry, this contact channel isn't available right now. "
+            "Please reach us instead through our web chat widget."
+        )
+    return None
+
+
 @app.post("/v1/messages", response_model=ChatResponse)
 async def process_message(
     payload: ChatRequest, x_internal_token: str = Header(default="")
 ):
     if x_internal_token != settings.internal_service_token:
         raise HTTPException(status_code=401, detail="missing_or_invalid_internal_token")
+
+    tenant_config = await get_tenant_config(payload.tenant_id)
+    unavailable_reply = unavailable_channel_reply(tenant_config, payload.channel)
+    if unavailable_reply is not None:
+        return ChatResponse(
+            session_id=payload.session_id,
+            current_state="GREETING",
+            reply=unavailable_reply,
+        )
 
     session_key = session_store.build_session_key(
         payload.tenant_id, payload.channel, payload.client_id

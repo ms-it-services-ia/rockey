@@ -32,6 +32,7 @@ public class TenantConfigController {
                                                 tc.getAgentTone(),
                                                 tc.getAgentFormality(),
                                                 tc.getAgentLanguage(),
+                                                tc.isChannelEmailActive(),
                                                 tc.isChannelSlackActive(),
                                                 tc.getChannelSlackChannel(),
                                                 tc.getDriveFolderId())))

@@ -20,7 +20,9 @@ public class ReturnService {
     public record ReturnResult(String returnId, String labelUrl, UUID dossierId) {}
 
     /** Only ever called after `EligibilityService` has confirmed eligibility (spec FR-005) —
-     * this method does not re-check eligibility itself, it executes the decision. */
+     * this method does not re-check eligibility itself, it executes the decision. Also
+     * reused for auto-approved complaints (spec US5 AC4: "initiates a free return plus
+     * refund") — `dossierType` records which one this actually was. */
     public ReturnResult createReturn(
             String tenantId,
             String orderId,
@@ -30,7 +32,8 @@ public class ReturnService {
             BigDecimal amount,
             String channel,
             String sessionId,
-            String appliedRule) {
+            String appliedRule,
+            String dossierType) {
         String labelUrl = labelGenerator.generate(orderId);
         String returnId = "RET-" + UUID.randomUUID().toString().substring(0, 8);
 
@@ -39,7 +42,7 @@ public class ReturnService {
         dossier.setClientEmail(clientEmail);
         dossier.setOrderId(orderId);
         dossier.setArticleId(articleId);
-        dossier.setType("return");
+        dossier.setType(dossierType);
         dossier.setReason(reason);
         dossier.setStatus("resolved");
         dossier.setDecision("accepted");

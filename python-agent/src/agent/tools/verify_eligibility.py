@@ -14,10 +14,16 @@ async def verify_eligibility(
     reason: str,
     article_data: dict,
     is_international: bool = False,
+    request_type: str = "return",
 ) -> dict:
     """Returns {eligible, autoApprovable, reason, appliedRule}. The article's returnable
     flag and non_return_reason come from `article_data`, already fetched by the caller via
-    pgvector (constitution III.5) — Java never queries `articles` itself."""
+    pgvector (constitution III.5) — Java never queries `articles` itself.
+
+    `request_type` is "return" (US3, default) or "complaint" (US5) — Java applies
+    different rules (legal warranty vs. return window) but returns the same response
+    shape either way, so `decision.py` handles both identically.
+    """
 
     async def _call() -> dict:
         async with httpx.AsyncClient() as client:
@@ -32,6 +38,7 @@ async def verify_eligibility(
                         "nonReturnReason": article_data.get("non_return_reason"),
                     },
                     "isInternational": is_international,
+                    "type": request_type,
                 },
                 headers={"X-Internal-Token": settings.internal_service_token},
             )

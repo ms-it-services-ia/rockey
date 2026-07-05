@@ -22,6 +22,7 @@ async def auto_action_node(state: dict) -> dict:
             channel=state["channel"],
             session_id=state["session_id"],
             applied_rule=state.get("applied_rule", ""),
+            dossier_type=state.get("intent", "return"),
         )
         refund_result = await trigger_refund(
             order_id=state["order_id"], tenant_id=state["tenant_id"], amount=amount

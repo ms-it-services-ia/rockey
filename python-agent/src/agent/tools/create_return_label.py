@@ -18,8 +18,10 @@ async def create_return_label(
     channel: str,
     session_id: str,
     applied_rule: str,
+    dossier_type: str = "return",
 ) -> dict:
-    """Returns {returnId, labelUrl}."""
+    """Returns {returnId, labelUrl}. Also reused for auto-approved complaints (spec US5
+    AC4) — `dossier_type` ("return" or "complaint") records which one this actually was."""
 
     async def _call() -> dict:
         async with httpx.AsyncClient() as client:
@@ -35,6 +37,7 @@ async def create_return_label(
                     "channel": channel,
                     "sessionId": session_id,
                     "appliedRule": applied_rule,
+                    "type": dossier_type,
                 },
                 headers={"X-Internal-Token": settings.internal_service_token},
             )
