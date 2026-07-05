@@ -268,7 +268,7 @@ channel.
 - [ ] T082 [P] Implement `AdminController` with `POST /admin/rag/sync?tenant_id=vinted` in `java-gateway/src/main/java/com/rockey/gateway/controller/AdminController.java`
 - [ ] T083 [P] Add structured JSON error logging (`session_id`, `tenant_id`, `timestamp`) across Java and Python per constitution VI.1
 - [ ] T084 [P] Source normalized customer-facing error messages from the retailer's Drive config per constitution VI.4
-- [ ] T085 Run quickstart.md's 5 POC validation scenarios end-to-end against `docker-compose`
+- [X] T085 Run quickstart.md's 5 POC validation scenarios end-to-end against `docker-compose`
 - [ ] T086 [P] Verify Java test coverage > 70% (constitution VII.1) and add tests to close any gaps
 - [ ] T087 [P] Confirm all 5 MCP tools in contracts/mcp-tools.md have a passing contract test
 - [ ] T088 Security pass: zero hardcoded secrets, `.env.example` complete, `X-Internal-Token` enforced on every `/internal/**` route (constitution IV.1/IV.2)

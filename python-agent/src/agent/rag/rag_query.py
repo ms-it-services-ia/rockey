@@ -59,7 +59,7 @@ async def query_article(
             """,
             *params,
         )
-        return [dict(r) for r in rows]
+        return [_article_row_to_dict(r) for r in rows]
     finally:
         await conn.close()
 
@@ -76,9 +76,20 @@ async def get_article_by_id(article_id: str, tenant_id: str) -> dict | None:
             article_id,
             tenant_id,
         )
-        return dict(row) if row else None
+        return _article_row_to_dict(row) if row else None
     finally:
         await conn.close()
+
+
+def _article_row_to_dict(row) -> dict:
+    """asyncpg decodes the `articles.price` DECIMAL column as decimal.Decimal, which
+    json.dumps can't serialize — article_data flows into LangGraph state, which gets
+    JSON-persisted to Redis every turn (session_store.save_session), so it must stay
+    plain-JSON-safe from the moment it leaves the database."""
+    data = dict(row)
+    if data.get("price") is not None:
+        data["price"] = float(data["price"])
+    return data
 
 
 async def rag_documents_count(tenant_id: str) -> int:

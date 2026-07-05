@@ -32,7 +32,9 @@ public class TicketService {
             String summary,
             BigDecimal amount,
             String channel,
-            String sessionId) {
+            String sessionId,
+            String type,
+            String appliedRule) {
         String ticketId = "TCK-" + UUID.randomUUID().toString().substring(0, 8);
 
         Dossier dossier = new Dossier();
@@ -40,6 +42,11 @@ public class TicketService {
         dossier.setClientEmail(clientEmail);
         dossier.setOrderId(orderId);
         dossier.setReason(reason);
+        // dossiers.type has a CHECK ('return','complaint') constraint — escalations that
+        // happen before intent is known (e.g. identification/qualification failures) have
+        // no natural type, so default to "return" (same fallback used by
+        // create_return_label/verify_eligibility on the Python side).
+        dossier.setType(type != null ? type : "return");
         // Escalation is irreversible for the remainder of the session (constitution V.4) —
         // once a dossier is created here, its status can only ever be "escalated".
         dossier.setStatus("escalated");
@@ -48,6 +55,10 @@ public class TicketService {
         dossier.setChannel(channel);
         dossier.setSessionId(sessionId);
         dossier.setTicketId(ticketId);
+        // Constitution V.3: "every decision is logged with the reason and the applied
+        // rule" — null here for identification/qualification-failure escalations, which
+        // never reached a policy-rule evaluation in the first place.
+        dossier.setAppliedRule(appliedRule);
         dossierRepository.save(dossier);
 
         return new TicketResult(ticketId, "within 24 business hours");

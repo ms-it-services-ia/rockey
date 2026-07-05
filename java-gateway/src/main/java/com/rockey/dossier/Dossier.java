@@ -117,6 +117,10 @@ public class Dossier {
         this.sessionId = sessionId;
     }
 
+    public String getAppliedRule() {
+        return appliedRule;
+    }
+
     public void setAppliedRule(String appliedRule) {
         this.appliedRule = appliedRule;
     }

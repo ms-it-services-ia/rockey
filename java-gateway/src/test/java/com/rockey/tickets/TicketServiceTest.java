@@ -40,7 +40,9 @@ class TicketServiceTest {
                         "Defective cashmere coat, amount above threshold",
                         new BigDecimal("265.00"),
                         "web",
-                        "session-3");
+                        "session-3",
+                        "complaint",
+                        "manual_review_threshold:200.00");
 
         assertThat(result.ticketId()).startsWith("TCK-");
         assertThat(result.delay()).isNotBlank();
@@ -52,9 +54,41 @@ class TicketServiceTest {
 
         ticketService.createTicket(
                 "vinted", "CMD-2026-00003", "sophie.bernard@email.com", "defective_item",
-                "summary", new BigDecimal("265.00"), "web", "session-3");
+                "summary", new BigDecimal("265.00"), "web", "session-3", "complaint",
+                "manual_review_threshold:200.00");
 
         verify(dossierRepository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo("escalated");
+    }
+
+    @Test
+    void edgeCase_dossierTypeDefaultsToReturn_whenEscalationHappensBeforeIntentIsKnown() {
+        // dossiers.type has a CHECK ('return','complaint') constraint — identification/
+        // qualification-failure escalations happen before intent is classified, so this
+        // must never leave `type` null (regression: previously left unset, which violated
+        // the DB's NOT NULL constraint and silently dropped the Dossier entirely).
+        ArgumentCaptor<Dossier> captor = ArgumentCaptor.forClass(Dossier.class);
+
+        ticketService.createTicket(
+                "vinted", "CMD-2026-00003", "sophie.bernard@email.com", "identification_failed",
+                "summary", new BigDecimal("265.00"), "web", "session-3", null, null);
+
+        verify(dossierRepository).save(captor.capture());
+        assertThat(captor.getValue().getType()).isEqualTo("return");
+    }
+
+    @Test
+    void edgeCase_dossierPersistsAppliedRule_perConstitutionV3() {
+        // Regression: previously never set at all, leaving escalated dossiers as the only
+        // outcome path (vs. auto-approved/refused) with a blank applied_rule.
+        ArgumentCaptor<Dossier> captor = ArgumentCaptor.forClass(Dossier.class);
+
+        ticketService.createTicket(
+                "vinted", "CMD-2026-00003", "sophie.bernard@email.com", "defective_item",
+                "summary", new BigDecimal("265.00"), "web", "session-3", "complaint",
+                "manual_review_threshold:200.00");
+
+        verify(dossierRepository).save(captor.capture());
+        assertThat(captor.getValue().getAppliedRule()).isEqualTo("manual_review_threshold:200.00");
     }
 }
