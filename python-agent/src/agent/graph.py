@@ -110,6 +110,18 @@ def _route_after_auto_action(state: AgentState) -> str:
     return "ESCALATION" if state.get("escalated") else "CONFIRMATION"
 
 
+def _route_after_complaint_flow(state: AgentState) -> str:
+    # Repeated complaint on the same item -> automatic escalation (spec US5 edge case);
+    # complaint_flow_node sets escalated=True itself when history_store reports a repeat.
+    if state.get("escalated"):
+        return "ESCALATION"
+    # Vague description -> ask a clarifying question and wait for the customer's answer
+    # (spec US5 edge case, up to 2 times, mirroring qualification.py's clarification loop).
+    if state.get("_complaint_needs_clarification"):
+        return "COMPLAINT_FLOW"
+    return "VERIFICATION"
+
+
 def build_graph():
     graph = StateGraph(AgentState)
 
@@ -143,7 +155,11 @@ def build_graph():
         },
     )
     graph.add_edge("RETURN_FLOW", "VERIFICATION")
-    graph.add_edge("COMPLAINT_FLOW", "VERIFICATION")
+    graph.add_conditional_edges(
+        "COMPLAINT_FLOW",
+        _route_after_complaint_flow,
+        {"VERIFICATION": "VERIFICATION", "ESCALATION": "ESCALATION", "COMPLAINT_FLOW": "COMPLAINT_FLOW"},
+    )
     graph.add_conditional_edges(
         "VERIFICATION", _route_after_verification, {"DECISION": "DECISION", "ESCALATION": "ESCALATION"}
     )
@@ -191,13 +207,13 @@ _NODES = {
 _UNCONDITIONAL_NEXT = {
     "GREETING": "IDENTIFICATION",
     "RETURN_FLOW": "VERIFICATION",
-    "COMPLAINT_FLOW": "VERIFICATION",
     "ESCALATION": "CONFIRMATION",
 }
 
 _CONDITIONAL_NEXT = {
     "IDENTIFICATION": _route_after_identification,
     "QUALIFICATION": _route_after_qualification,
+    "COMPLAINT_FLOW": _route_after_complaint_flow,
     "VERIFICATION": _route_after_verification,
     "DECISION": _route_after_decision,
     "AUTO_ACTION": _route_after_auto_action,

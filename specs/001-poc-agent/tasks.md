@@ -197,16 +197,16 @@ Scenario 3).
 
 ### Tests for User Story 5
 
-- [ ] T064 [P] [US5] Integration test: defective-item complaint above threshold, spec Scenario 3 (Sophie Bernard / CMD-2026-00003) in `python-agent/tests/integration/test_complaint_escalation.py`
-- [ ] T065 [P] [US5] Integration test: repeated complaint on the same item triggers automatic escalation with history in `python-agent/tests/integration/test_complaint_repeat.py`
-- [ ] T065b [P] [US5] Edge-case tests: vague defect description triggers up to 2 clarifying questions, complaint filed after the standard return window escalates under legal warranty (with an explanatory note), in `python-agent/tests/integration/test_complaint_edge_cases.py`
+- [X] T064 [P] [US5] Integration test: defective-item complaint above threshold, spec Scenario 3 (Sophie Bernard / CMD-2026-00003) in `python-agent/tests/integration/test_complaint_escalation.py`
+- [X] T065 [P] [US5] Integration test: repeated complaint on the same item triggers automatic escalation with history in `python-agent/tests/integration/test_complaint_repeat.py`
+- [X] T065b [P] [US5] Edge-case tests: vague defect description triggers up to 2 clarifying questions, complaint filed after the standard return window escalates under legal warranty (with an explanatory note), in `python-agent/tests/integration/test_complaint_edge_cases.py`
 
 ### Implementation for User Story 5
 
-- [ ] T066 [US5] Implement `complaint_flow.py` LangGraph node (reason + free-text description collection) in `python-agent/src/agent/states/complaint_flow.py`
-- [ ] T067 [US5] Extend `EligibilityService` with complaint-specific rules (legal warranty past the return window) in `java-gateway/src/main/java/com/rockey/eligibility/`
-- [ ] T068 [US5] Implement `client_history` lookup for repeated-complaint detection in `python-agent/src/agent/memory/history_store.py`
-- [ ] T069 [US5] Wire `COMPLAINT_FLOW → VERIFICATION` in `python-agent/src/agent/graph.py`, reusing US3's `VERIFICATION`/`DECISION`/`AUTO_ACTION`/`ESCALATION` nodes (depends on T066)
+- [X] T066 [US5] Implement `complaint_flow.py` LangGraph node (reason + free-text description collection) in `python-agent/src/agent/states/complaint_flow.py`
+- [X] T067 [US5] Extend `EligibilityService` with complaint-specific rules (legal warranty past the return window) in `java-gateway/src/main/java/com/rockey/eligibility/`
+- [X] T068 [US5] Implement `client_history` lookup for repeated-complaint detection in `python-agent/src/agent/memory/history_store.py`
+- [X] T069 [US5] Wire `COMPLAINT_FLOW → VERIFICATION` in `python-agent/src/agent/graph.py`, reusing US3's `VERIFICATION`/`DECISION`/`AUTO_ACTION`/`ESCALATION` nodes (depends on T066)
 
 **Checkpoint**: User Stories 1-5 — both return and complaint flows work independently.
 
@@ -222,13 +222,13 @@ contains a case number, action taken, processing time, and next step.
 
 ### Tests for User Story 6
 
-- [ ] T070 [P] [US6] Integration test: closing summary contains case number, action, processing time, next step in `python-agent/tests/integration/test_confirmation.py`
+- [X] T070 [P] [US6] Integration test: closing summary contains case number, action, processing time, next step in `python-agent/tests/integration/test_confirmation.py`
 
 ### Implementation for User Story 6
 
-- [ ] T071 [US6] Implement `confirmation.py` LangGraph node (structured summary + offer of additional help) in `python-agent/src/agent/states/confirmation.py`
-- [ ] T072 [US6] Persist final Dossier status (`resolved`/`escalated`) via the existing MCP tools, called from `confirmation.py`
-- [ ] T073 [US6] Attach the return label (email PDF / widget link) in the confirmation response per contracts/internal-message.md's `attachments` field
+- [X] T071 [US6] Implement `confirmation.py` LangGraph node (structured summary + offer of additional help) in `python-agent/src/agent/states/confirmation.py`
+- [X] T072 [US6] Persist final Dossier status (`resolved`/`escalated`) via the existing MCP tools, called from `confirmation.py`
+- [X] T073 [US6] Attach the return label (email PDF / widget link) in the confirmation response per contracts/internal-message.md's `attachments` field
 
 **Checkpoint**: User Stories 1-6 — every resolved or escalated case ends with a proper
 customer-facing confirmation.
@@ -246,18 +246,18 @@ channel.
 
 ### Tests for User Story 7
 
-- [ ] T074 [P] [US7] Integration test: identical decision for the same request via Web Widget vs. Email in `python-agent/tests/integration/test_channel_parity.py`
-- [ ] T075 [P] [US7] Integration test: session resumes within 30 minutes on the same channel in `python-agent/tests/integration/test_session_resume.py`
-- [ ] T075b [P] [US7] Edge-case tests: mid-request channel switch starts a new session, unavailable channel shows an alternative-channel message, in `python-agent/tests/integration/test_channel_edge_cases.py`
+- [X] T074 [P] [US7] Integration test: identical decision for the same request via Web Widget vs. Email in `python-agent/tests/integration/test_channel_parity.py`
+- [X] T075 [P] [US7] Integration test: session resumes within 30 minutes on the same channel in `python-agent/tests/integration/test_session_resume.py`
+- [X] T075b [P] [US7] Edge-case tests: mid-request channel switch starts a new session, unavailable channel shows an alternative-channel message, in `python-agent/tests/integration/test_channel_edge_cases.py`
 
 ### Implementation for User Story 7
 
-- [ ] T076 [P] [US7] Implement `WebChatController` (WebSocket + REST fallback) in `java-gateway/src/main/java/com/rockey/gateway/controller/WebChatController.java` per contracts/channel-apis.md
-- [ ] T077 [P] [US7] Implement `WebChatAdapter` (native ↔ internal format) in `java-gateway/src/main/java/com/rockey/gateway/adapter/WebChatAdapter.java`
-- [ ] T078 [P] [US7] Implement `EmailController` (IMAP polling every 2 minutes) in `java-gateway/src/main/java/com/rockey/gateway/controller/EmailController.java`
-- [ ] T079 [P] [US7] Implement `EmailAdapter` (parse inbound; HTML + PDF outbound) in `java-gateway/src/main/java/com/rockey/gateway/adapter/EmailAdapter.java`
-- [ ] T080 [US7] Implement the embeddable JS widget snippet (`data-tenant`, `data-position`), served by `java-gateway`
-- [ ] T081 [US7] Implement per-channel response-length/format adaptation (widget vs. email) in the agent's response-formatting layer
+- [X] T076 [P] [US7] Implement `WebChatController` (WebSocket + REST fallback) in `java-gateway/src/main/java/com/rockey/gateway/controller/WebChatController.java` per contracts/channel-apis.md
+- [X] T077 [P] [US7] Implement `WebChatAdapter` (native ↔ internal format) in `java-gateway/src/main/java/com/rockey/gateway/adapter/WebChatAdapter.java`
+- [X] T078 [P] [US7] Implement `EmailController` (IMAP polling every 2 minutes) in `java-gateway/src/main/java/com/rockey/gateway/controller/EmailController.java`
+- [X] T079 [P] [US7] Implement `EmailAdapter` (parse inbound; HTML + PDF outbound) in `java-gateway/src/main/java/com/rockey/gateway/adapter/EmailAdapter.java`
+- [X] T080 [US7] Implement the embeddable JS widget snippet (`data-tenant`, `data-position`), served by `java-gateway`
+- [X] T081 [US7] Implement per-channel response-length/format adaptation (widget vs. email) in the agent's response-formatting layer
 
 **Checkpoint**: All 7 user stories are independently functional.
 

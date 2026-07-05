@@ -25,6 +25,15 @@ public class TenantConfig {
     @Column(name = "agent_language")
     private String agentLanguage;
 
+    @Column(name = "channel_email_active")
+    private boolean channelEmailActive;
+
+    @Column(name = "channel_email_imap")
+    private String channelEmailImap;
+
+    @Column(name = "channel_email_address")
+    private String channelEmailAddress;
+
     @Column(name = "channel_slack_active")
     private boolean channelSlackActive;
 
@@ -54,6 +63,18 @@ public class TenantConfig {
 
     public String getAgentLanguage() {
         return agentLanguage;
+    }
+
+    public boolean isChannelEmailActive() {
+        return channelEmailActive;
+    }
+
+    public String getChannelEmailImap() {
+        return channelEmailImap;
+    }
+
+    public String getChannelEmailAddress() {
+        return channelEmailAddress;
     }
 
     public boolean isChannelSlackActive() {

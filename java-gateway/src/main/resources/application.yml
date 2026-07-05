@@ -12,6 +12,21 @@ spring:
     hibernate:
       ddl-auto: validate
     open-in-view: false
+  mail:
+    # SMTP send side of the Email channel (constitution I.4b). IMAP receive-side host/user
+    # come from tenant_config per retailer; SMTP is assumed to be the same mail provider
+    # (Gmail, per constitution VIII.2's example) since the constitution doesn't define a
+    # separate SMTP host variable.
+    host: ${VINTED_EMAIL_SMTP_HOST:smtp.gmail.com}
+    port: ${VINTED_EMAIL_SMTP_PORT:587}
+    username: ${VINTED_EMAIL_USER:}
+    password: ${VINTED_EMAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          starttls:
+            enable: true
 
 server:
   port: 8080

@@ -2,7 +2,6 @@ package com.rockey.dossier;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import java.math.BigDecimal;
@@ -12,14 +11,17 @@ import java.util.UUID;
  * A single return or complaint request being processed — called "Case" in spec.md and
  * "Dossier" here, matching the constitution's `dossiers` table name (data-model.md documents
  * this naming mapping explicitly).
+ *
+ * <p>{@code id} is generated client-side (not {@code @GeneratedValue}) so callers can read
+ * it back immediately after {@code save()} without depending on a DB round-trip — several
+ * services (ReturnService, TicketService, DossierService) return this id to their caller in
+ * the same call.
  */
 @Entity
 @Table(name = "dossiers")
 public class Dossier {
 
-    @Id
-    @GeneratedValue
-    private UUID id;
+    @Id private UUID id = UUID.randomUUID();
 
     @Column(name = "tenant_id")
     private String tenantId;
@@ -75,6 +77,10 @@ public class Dossier {
         this.articleId = articleId;
     }
 
+    public String getType() {
+        return type;
+    }
+
     public void setType(String type) {
         this.type = type;
     }
@@ -89,6 +95,10 @@ public class Dossier {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getDecision() {
+        return decision;
     }
 
     public void setDecision(String decision) {

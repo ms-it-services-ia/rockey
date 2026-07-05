@@ -30,7 +30,8 @@ public class PolicyLoader {
                     (int) tenantPolicy.get("return_window_days_domestic"),
                     (int) tenantPolicy.get("return_window_days_international"),
                     new BigDecimal(tenantPolicy.get("auto_refund_max_amount").toString()),
-                    new BigDecimal(tenantPolicy.get("manual_review_max_amount").toString()));
+                    new BigDecimal(tenantPolicy.get("manual_review_max_amount").toString()),
+                    (int) tenantPolicy.get("legal_warranty_days"));
         } catch (Exception e) {
             throw new IllegalStateException("Failed to load policy for tenant " + tenantId, e);
         }
