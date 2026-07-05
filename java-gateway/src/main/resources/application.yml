@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: rockey-java-gateway
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/rockeydb}
+    username: ${SPRING_DATASOURCE_USERNAME:rockey}
+    password: ${SPRING_DATASOURCE_PASSWORD:changeme}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+
+server:
+  port: 8080
+
+rockey:
+  internal-service-token: ${INTERNAL_SERVICE_TOKEN:changeme_internal_token}
+  python-agent-url: ${PYTHON_AGENT_URL:http://localhost:8000}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

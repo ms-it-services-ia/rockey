@@ -1,0 +1,83 @@
+version: "3.9"
+services:
+
+  java-gateway:
+    build: ./java-gateway
+    ports: ["8080:8080"]
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/rockeydb
+      - SPRING_DATASOURCE_USERNAME=rockey
+      - SPRING_DATASOURCE_PASSWORD=${POSTGRES_PASSWORD}
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - PYTHON_AGENT_URL=http://python-agent:8000
+      - VINTED_EMAIL_IMAP=${VINTED_EMAIL_IMAP}
+      - VINTED_EMAIL_USER=${VINTED_EMAIL_USER}
+      - VINTED_EMAIL_PASSWORD=${VINTED_EMAIL_PASSWORD}
+      - SLACK_MCP_TOKEN=${SLACK_MCP_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  python-agent:
+    build: ./python-agent
+    ports: ["8000:8000"]
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - DATABASE_URL=postgresql://rockey:${POSTGRES_PASSWORD}@postgres:5432/rockeydb
+      - REDIS_HOST=redis
+      - JAVA_SERVICES_URL=http://java-gateway:8080
+      - INTERNAL_SERVICE_TOKEN=${INTERNAL_SERVICE_TOKEN}
+      - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+      - VINTED_DRIVE_FOLDER_ID=${VINTED_DRIVE_FOLDER_ID:-}
+      - SLACK_MCP_TOKEN=${SLACK_MCP_TOKEN:-}
+      - GMAIL_MCP_TOKEN=${GMAIL_MCP_TOKEN:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      java-gateway:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: rockeydb
+      POSTGRES_USER: rockey
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports: ["5432:5432"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rockey -d rockeydb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    ports: ["6379:6379"]
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
+  redisdata:
