@@ -11,6 +11,7 @@ python-agent/**/__pycache__/
 python-agent/.venv/
 python-agent/venv/
 python-agent/*.egg-info/
+python-agent/**/*.egg-info/
 python-agent/dist/
 python-agent/build/
 .pytest_cache/
