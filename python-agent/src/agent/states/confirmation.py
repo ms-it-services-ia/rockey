@@ -44,11 +44,16 @@ async def confirmation_node(state: dict) -> dict:
         except TechnicalFailure:
             # Never let a raw technical error reach the customer (constitution VI.1) —
             # the refusal itself already stands; only the case-tracking record failed.
-            reply = f"{base_reply} Is there anything else I can help you with?"
-            return {**state, "current_state": "CONFIRMATION", "reply": reply}
+            # base_reply is already a complete, self-contained message (see decision.py's
+            # prompt), so nothing further needs to be appended here.
+            return {**state, "current_state": "CONFIRMATION", "reply": base_reply}
 
+        # base_reply may be LLM-composed in the tenant's configured language (constitution
+        # I.7) and is already a complete, self-contained message — appending an English
+        # sentence here would mix languages, so the case reference is tagged in a
+        # language-neutral bracketed form instead.
         case_id = refusal_record.get("caseId")
-        reply = f"{base_reply} (Reference: {case_id}.) Is there anything else I can help you with?"
+        reply = f"{base_reply} [{case_id}]"
         return {**state, "case_id": case_id, "current_state": "CONFIRMATION", "reply": reply}
 
     # Auto-approved happy path (decision == "auto"): compose the closing summary here —

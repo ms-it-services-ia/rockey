@@ -5,6 +5,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5"
     database_url: str = "postgresql://rockey:changeme@localhost:5432/rockeydb"
     redis_host: str = "localhost"
     redis_port: int = 6379

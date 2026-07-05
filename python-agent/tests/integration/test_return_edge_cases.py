@@ -1,8 +1,18 @@
 """Edge-case tests for RETURN_FLOW/DECISION (spec User Story 3 edge cases)."""
 
+from unittest.mock import AsyncMock, patch
+
 import pytest
 
 from agent.states.decision import decision_node
+
+
+def _echo_fallback_mock() -> AsyncMock:
+    """decision_node's refusal branch now calls generate_decision_explanation (LLM + RAG,
+    constitution I.7), which does real network I/O. Echo back the fallback_text it was
+    given, so these tests stay deterministic/offline while still exercising the wiring and
+    the exact same reply content as before."""
+    return AsyncMock(side_effect=lambda **kwargs: kwargs["fallback_text"])
 
 
 def _base_state(**overrides) -> dict:
@@ -26,7 +36,8 @@ async def test_final_clearance_item_is_refused_not_escalated():
         action_result={"eligibility_reason": "Item excluded from returns: destockage"},
     )
 
-    result = await decision_node(state)
+    with patch("agent.states.decision.generate_decision_explanation", new=_echo_fallback_mock()):
+        result = await decision_node(state)
 
     assert result["decision"] == "refused"
     assert not result["escalated"]
@@ -62,8 +73,9 @@ async def test_customer_disputes_decision_agent_never_renegotiates():
         customer_disputes=True,
     )
 
-    first = await decision_node(state)
-    second = await decision_node(state)
+    with patch("agent.states.decision.generate_decision_explanation", new=_echo_fallback_mock()):
+        first = await decision_node(state)
+        second = await decision_node(state)
 
     assert first["decision"] == second["decision"] == "refused"
     assert first["reply"] == second["reply"]

@@ -13,7 +13,7 @@ async def test_create_return_label_returns_label_and_return_id():
     fake_response.raise_for_status = lambda: None
     fake_response.json = lambda: {
         "returnId": "RET-abcd1234",
-        "labelUrl": "https://labels.rockey.local/LBL-CMD-2026-00001-abcd1234.pdf",
+        "labelUrl": "https://returns.vinted.local/LBL-CMD-2026-00001-abcd1234.pdf",
     }
 
     with patch("httpx.AsyncClient.post", return_value=fake_response):

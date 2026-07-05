@@ -43,7 +43,7 @@ async def test_eligible_return_generates_label_and_refund_automatically():
         ),
         patch(
             "agent.states.auto_action.create_return_label",
-            new=AsyncMock(return_value={"returnId": "RET-abcd1234", "labelUrl": "https://labels.rockey.local/LBL-abcd1234.pdf"}),
+            new=AsyncMock(return_value={"returnId": "RET-abcd1234", "labelUrl": "https://returns.vinted.local/LBL-abcd1234.pdf"}),
         ),
         patch(
             "agent.states.auto_action.trigger_refund",
