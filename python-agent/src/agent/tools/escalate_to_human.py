@@ -11,7 +11,7 @@ from config.settings import settings
 
 
 async def escalate_to_human(
-    order_id: str,
+    order_id: str | None,
     tenant_id: str,
     reason: str,
     summary: str,
@@ -20,10 +20,18 @@ async def escalate_to_human(
     channel: str,
     session_id: str,
     article_name: str = "N/A",
+    request_type: str = "return",
+    applied_rule: str | None = None,
 ) -> dict:
     """Returns {ticketId, delay}. Constitution V.4: escalation always triggers Slack — this
     function always attempts the Slack send (send_escalation_notification itself is what
-    decides to skip if SLACK_MCP_TOKEN is absent, never this caller)."""
+    decides to skip if SLACK_MCP_TOKEN is absent, never this caller).
+
+    `request_type` is "return" (default) or "complaint" — dossiers.type has a CHECK
+    constraint restricted to those two values, so escalations that happen before intent is
+    known (identification/qualification failures) fall back to "return". `applied_rule` is
+    None for those same pre-intent escalations (constitution V.3 only requires it once an
+    actual policy decision was reached)."""
 
     async def _create_ticket() -> dict:
         async with httpx.AsyncClient() as client:
@@ -38,6 +46,8 @@ async def escalate_to_human(
                     "amount": amount,
                     "channel": channel,
                     "sessionId": session_id,
+                    "type": request_type,
+                    "appliedRule": applied_rule,
                 },
                 headers={"X-Internal-Token": settings.internal_service_token},
             )

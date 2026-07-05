@@ -47,7 +47,11 @@ async def escalation_node(state: dict) -> dict:
 
     try:
         ticket = await escalate_to_human(
-            order_id=state.get("order_id") or "unknown",
+            # dossiers.order_id is a foreign key to orders(id) — NULL is fine (no order was
+            # ever identified, e.g. an identification-failure escalation) but a placeholder
+            # string like "unknown" is not, since it doesn't match any real order and trips
+            # the FK constraint.
+            order_id=state.get("order_id"),
             tenant_id=state["tenant_id"],
             reason=state.get("escalation_reason", "unspecified"),
             summary=summary,
@@ -56,6 +60,8 @@ async def escalation_node(state: dict) -> dict:
             channel=state["channel"],
             session_id=state["session_id"],
             article_name=(state.get("article_data") or {}).get("name", "N/A"),
+            request_type=state.get("intent") or "return",
+            applied_rule=state.get("applied_rule"),
         )
         ticket_id = ticket.get("ticketId")
         delay = ticket.get("delay", "as soon as possible")

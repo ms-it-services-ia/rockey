@@ -24,7 +24,9 @@ public class TicketController {
             String summary,
             BigDecimal amount,
             String channel,
-            String sessionId) {}
+            String sessionId,
+            String type,
+            String appliedRule) {}
 
     public record CreateTicketResponse(String ticketId, String delay) {}
 
@@ -39,7 +41,9 @@ public class TicketController {
                         request.summary(),
                         request.amount(),
                         request.channel(),
-                        request.sessionId());
+                        request.sessionId(),
+                        request.type(),
+                        request.appliedRule());
         return ResponseEntity.ok(new CreateTicketResponse(result.ticketId(), result.delay()));
     }
 }

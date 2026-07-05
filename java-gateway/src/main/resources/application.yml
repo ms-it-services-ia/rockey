@@ -40,3 +40,9 @@ management:
     web:
       exposure:
         include: health
+  health:
+    mail:
+      # The Email channel is optional and per-tenant (channel_email_active) — a bad/absent
+      # SMTP credential must not fail the whole gateway's health check (constitution VI.1:
+      # one dependency's outage shouldn't cascade into an unrelated liveness signal).
+      enabled: false
