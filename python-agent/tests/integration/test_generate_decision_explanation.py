@@ -11,7 +11,7 @@ from agent.tools.generate_decision_explanation import generate_decision_explanat
 @pytest.mark.asyncio
 async def test_success_path_returns_llm_composed_text_grounded_in_retrieved_policy():
     fake_message = MagicMock()
-    fake_message.content = [MagicMock(text="Here's why, per our return policy: ...")]
+    fake_message.content = [MagicMock(type="text", text="Here's why, per our return policy: ...")]
 
     with (
         patch(
@@ -48,6 +48,43 @@ async def test_success_path_returns_llm_composed_text_grounded_in_retrieved_poli
     mock_client.messages.create.assert_awaited_once()
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert "piece_unique are excluded" in call_kwargs["system"]
+
+
+@pytest.mark.asyncio
+async def test_skips_leading_thinking_block_to_find_the_text_block():
+    """Some models emit a ThinkingBlock before the TextBlock — content[0] isn't always the
+    reply, so the function must scan for the first text block rather than assume position 0."""
+    fake_message = MagicMock()
+    fake_message.content = [
+        MagicMock(type="thinking", text=None),
+        MagicMock(type="text", text="Here's why, per our return policy: ..."),
+    ]
+
+    with (
+        patch(
+            "agent.tools.generate_decision_explanation.get_tenant_config",
+            new=AsyncMock(return_value={"agentFirstName": "Léa"}),
+        ),
+        patch(
+            "agent.tools.generate_decision_explanation.query_policy",
+            new=AsyncMock(return_value=[]),
+        ),
+        patch("agent.tools.generate_decision_explanation._get_client") as mock_get_client,
+    ):
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=fake_message)
+        mock_get_client.return_value = mock_client
+
+        result = await generate_decision_explanation(
+            tenant_id="vinted",
+            channel="web",
+            current_state="DECISION",
+            question="Explain the refusal",
+            article_context="",
+            fallback_text="fallback text",
+        )
+
+    assert result == "Here's why, per our return policy: ..."
 
 
 @pytest.mark.asyncio

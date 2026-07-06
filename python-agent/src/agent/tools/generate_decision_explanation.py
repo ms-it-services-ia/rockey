@@ -68,7 +68,12 @@ async def generate_decision_explanation(
                 system=system_prompt,
                 messages=[{"role": "user", "content": question}],
             )
-            return response.content[0].text.strip()
+            # Some models emit a ThinkingBlock before the TextBlock, so content[0] isn't
+            # always the reply text — find the first text block instead.
+            for block in response.content:
+                if block.type == "text":
+                    return block.text.strip()
+            raise ValueError("no text block in LLM response")
 
         return await call_with_breaker("llm", _call, on_fallback=lambda: fallback_text)
     except Exception:
