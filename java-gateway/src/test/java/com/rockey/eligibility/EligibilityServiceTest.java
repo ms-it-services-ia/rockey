@@ -13,17 +13,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 @ExtendWith(MockitoExtension.class)
 class EligibilityServiceTest {
 
     @Mock private OrderRepository orderRepository;
 
+    // Unstubbed: queryForList returns Mockito's default empty list, so PolicyLoader falls
+    // back to the bundled YAML (constitution VI.3) — this test cares about EligibilityService's
+    // rules, not PolicyLoader's live-vs-fallback source, and the YAML holds the same values
+    // (21/30/80.00/200.00/730) the retailer's actual policy documents state.
+    @Mock private JdbcTemplate jdbcTemplate;
+
     private EligibilityService eligibilityService;
 
     @BeforeEach
     void setUp() {
-        eligibilityService = new EligibilityService(orderRepository, new PolicyLoader());
+        eligibilityService = new EligibilityService(orderRepository, new PolicyLoader(jdbcTemplate));
     }
 
     private Order buildOrder(BigDecimal amount, LocalDate deliveryDate) throws Exception {

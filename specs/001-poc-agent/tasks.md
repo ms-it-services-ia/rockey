@@ -273,7 +273,7 @@ channel.
 - [ ] T087 [P] Confirm all 5 MCP tools in contracts/mcp-tools.md have a passing contract test
 - [X] T088 Security pass: zero hardcoded secrets, `.env.example` complete, `X-Internal-Token` enforced on every `/internal/**` route (constitution IV.1/IV.2)
 - [X] T089 Verify no agent response ever contains "Rockey", "AI", "algorithm", or "automated system" across a full quickstart.md run (constitution V.1 / spec FR-013)
-- [ ] T090 Replace `PolicyLoader`'s bundled `vinted-policy.yaml` with a live Drive-derived source (constitution I.7/V.3): sync the retailer's policy thresholds from their Drive docs into a queryable store on the RAG-sync schedule. `EligibilityService` must not change — it only ever calls `PolicyLoader.load(tenantId)` and consumes the `PolicyThresholds` record, so this is scoped to `PolicyLoader.java` (and `vinted-policy.yaml`'s replacement) alone. Introduced as a documented simplification during Setup/Foundational/US1-4 implementation (see `PolicyLoader.java`'s javadoc).
+- [X] T090 Replace `PolicyLoader`'s bundled `vinted-policy.yaml` with a live Drive-derived source (constitution I.7/V.3): sync the retailer's policy thresholds from their Drive docs into a queryable store on the RAG-sync schedule. `EligibilityService` must not change — it only ever calls `PolicyLoader.load(tenantId)` and consumes the `PolicyThresholds` record, so this is scoped to `PolicyLoader.java` (and `vinted-policy.yaml`'s replacement) alone. Introduced as a documented simplification during Setup/Foundational/US1-4 implementation (see `PolicyLoader.java`'s javadoc).
 
 ---
 
