@@ -1,101 +1,44 @@
-"""QUALIFICATION node (spec User Story 2, FR-003/FR-004). Classifies intent as return,
-complaint, or out-of-scope, asking at most 2 clarifying questions when ambiguous.
+"""QUALIFICATION node (spec User Story 2, FR-003/FR-004). Classifies intent as a return
+request, a non-delivery claim, a quality complaint, or out-of-scope, via an LLM call
+(research.md §4) — asking at most 2 clarifying questions when the LLM itself signals genuine
+ambiguity, never by matching exact phrases.
 
-Note: intent classification here is a simple keyword matcher — a production build would use
-Claude (research.md §4), but that requires a live ANTHROPIC_API_KEY call this POC's
-automated tests can't depend on. The classification boundary is isolated in `_classify_intent`
-so swapping it for an LLM-based classifier later doesn't touch the rest of this node.
+Constitution V.3 still holds: classify_message only classifies *what the customer is asking
+for* — it never decides an eligibility/refund outcome, which stays 100% rule-based in Java's
+EligibilityService.
 """
+
+import logging
+
+from agent.tools.classify_message import classify_message
+from config.circuit_breaker import TechnicalFailure
+
+logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATIONS = 2
 
-# Bilingual (EN/FR) — documented POC limitation (constitution II.1: Léa's persona is French,
-# but the keyword matcher was English-only until real customer testing surfaced messages
-# like "mon article n'est pas reçu, il est introuvable, je veux un remboursement" being
-# permanently unclassifiable, no matter how clearly the customer stated their request).
-_RETURN_KEYWORDS = (
-    "return",
-    "give back",
-    "wrong size",
-    "doesn't fit",
-    "changed my mind",
-    "exchange",
-    "retour",
-    "retourner",
-    "renvoyer",
-    "mauvaise taille",
-    "ne me va pas",
-    "j'ai changé d'avis",
-    "changé d'avis",
-    "échange",
-    "échanger",
-)
-_COMPLAINT_KEYWORDS = (
-    "defective",
-    "broken",
-    "damaged",
-    "complaint",
-    "faulty",
-    "wrong item",
-    "not working",
-    "not received",
-    "never received",
-    "haven't received",
-    "hasn't arrived",
-    "never arrived",
-    "lost",
-    "missing",
-    "défectueux",
-    "cassé",
-    "abîmé",
-    "endommagé",
-    "réclamation",
-    "ne fonctionne pas",
-    "mauvais article",
-    "pas reçu",
-    "non reçu",
-    "jamais reçu",
-    "introuvable",
-    "perdu",
-    "n'est jamais arrivé",
-    "colis perdu",
-)
-_OUT_OF_SCOPE_KEYWORDS = (
-    "price",
-    "discount",
-    "promo",
-    "restock",
-    "when will you",
-    "shipping cost",
-    "prix",
-    "réduction",
-    "promotion",
-    "réapprovisionnement",
-    "frais de livraison",
-)
-
-
-def _classify_intent(message: str) -> str | None:
-    """Returns "return", "complaint", "other", or None (ambiguous — needs clarification)."""
-    lowered = message.lower()
-    is_return = any(kw in lowered for kw in _RETURN_KEYWORDS)
-    is_complaint = any(kw in lowered for kw in _COMPLAINT_KEYWORDS)
-    is_out_of_scope = any(kw in lowered for kw in _OUT_OF_SCOPE_KEYWORDS)
-
-    if is_out_of_scope and not is_return and not is_complaint:
-        return "other"
-    if is_return and not is_complaint:
-        return "return"
-    if is_complaint and not is_return:
-        return "complaint"
-    return None  # mixed or unrecognized — ambiguous
+_CATEGORY_TO_INTENT = {
+    "return_request": "return",
+    "quality_complaint": "complaint",
+    "other": "other",
+}
 
 
 async def qualification_node(state: dict) -> dict:
     message = state.get("_latest_message", "")
-    intent = _classify_intent(message)
 
-    if intent == "other":
+    try:
+        category = await classify_message(message)
+    except TechnicalFailure:
+        return {
+            **state,
+            "escalated": True,
+            "escalation_reason": "service_unavailable",
+            "current_state": "QUALIFICATION",
+            "reply": "J'ai des difficultés à traiter votre demande en ce moment — je vous transfère à un collègue.",
+        }
+
+    if category == "other":
         reply = (
             "Cela sort un peu de ce que je peux traiter ici — je m'occupe des retours et "
             "des réclamations qualité. Pour cette question, notre service client habituel "
@@ -103,6 +46,29 @@ async def qualification_node(state: dict) -> dict:
         )
         return {**state, "intent": "other", "current_state": "QUALIFICATION", "reply": reply}
 
+    if category == "non_delivery":
+        # Return Policy §12/§9: a non-delivery claim has no physical item to return, so it
+        # must never flow into the standard return/complaint reason pipeline. Routes into
+        # COMPLAINT_FLOW (same as a quality complaint) but pre-marks it as already past its
+        # one verification round — complaint_flow_node's own _non_delivery_checked branch
+        # (constitution V.4) then always escalates the customer's next reply, rather than
+        # ever reaching VERIFICATION/DECISION/AUTO_ACTION's return-label pipeline.
+        reply = (
+            "Je suis désolée de l'apprendre. Avant d'aller plus loin, pourriez-vous "
+            "vérifier auprès des personnes de votre foyer, de la réception de votre "
+            "immeuble ou de vos voisins, au cas où le colis aurait été réceptionné par "
+            "quelqu'un d'autre ?"
+        )
+        return {
+            **state,
+            "intent": "complaint",
+            "reason": "not_received",
+            "_non_delivery_checked": True,
+            "current_state": "QUALIFICATION",
+            "reply": reply,
+        }
+
+    intent = _CATEGORY_TO_INTENT.get(category)
     if intent in ("return", "complaint"):
         reply = (
             "Compris — il semble que vous souhaitiez faire un retour. "
@@ -111,8 +77,11 @@ async def qualification_node(state: dict) -> dict:
         ) + "Pourriez-vous m'en dire plus sur la raison ?"
         return {**state, "intent": intent, "current_state": "QUALIFICATION", "reply": reply}
 
-    # Ambiguous: ask a clarifying question, up to MAX_CLARIFICATIONS times (FR-003).
+    # category == "ambiguous" (or an unrecognized value) -> ask a clarifying question, up to
+    # MAX_CLARIFICATIONS times (FR-003), then escalate. Logged at each step so real
+    # ambiguous phrasing patterns can be reviewed over time.
     reformulations = state.get("reformulation_count", 0) + 1
+    logger.warning("QUALIFICATION_AMBIGUOUS message=%r reformulation=%d", message, reformulations)
     if reformulations <= MAX_CLARIFICATIONS:
         reply = (
             "Pour être sûre de bien vous aider — souhaitez-vous retourner un article, ou "
@@ -121,6 +90,7 @@ async def qualification_node(state: dict) -> dict:
         return {**state, "reformulation_count": reformulations, "current_state": "QUALIFICATION", "reply": reply}
 
     # Still unclear after 2 clarifications -> escalate (data-model.md State Machine table).
+    logger.error("QUALIFICATION_ESCALATED_AMBIGUOUS message=%r after %d clarifications", message, reformulations)
     return {
         **state,
         "reformulation_count": reformulations,

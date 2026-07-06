@@ -1,6 +1,7 @@
 """RETURN_FLOW node (spec User Story 3, AC1): collects the return reason, then hands off to
 VERIFICATION (which runs immediately after, in the same turn — see graph.py's run_turn)."""
 
+from agent.nlp_patterns import mentions_non_delivery
 from agent.rag.rag_query import get_article_by_id
 from config.circuit_breaker import call_with_breaker
 
@@ -31,31 +32,18 @@ _REASON_KEYWORDS = {
         "différent de",
         "pas ce que j'ai commandé",
     ),
-    # Defense-in-depth (Return Policy §12/§9): if a non-delivery message ever ends up
-    # classified as "return" intent rather than "complaint" (e.g. it didn't happen to use
-    # any of qualification.py's complaint keywords), this still tags it correctly so
-    # decision.py's guard can escalate instead of generating a nonsensical return label for
-    # an item the customer never received.
-    "not_received": (
-        "not received",
-        "never received",
-        "haven't received",
-        "hasn't arrived",
-        "never arrived",
-        "lost",
-        "missing",
-        "pas reçu",
-        "non reçu",
-        "jamais reçu",
-        "introuvable",
-        "perdu",
-        "n'est jamais arrivé",
-        "colis perdu",
-    ),
+    # "not_received" is handled separately by mentions_non_delivery() below. Kept as its own
+    # reason here too (defense-in-depth, Return Policy §12/§9): if a non-delivery message
+    # ever ends up classified as "return" intent rather than "complaint" (e.g. it didn't
+    # happen to use any of qualification.py's complaint keywords), this still tags it
+    # correctly so decision.py's guard can escalate instead of generating a nonsensical
+    # return label for an item the customer never received.
 }
 
 
 def _classify_reason(message: str) -> str:
+    if mentions_non_delivery(message):
+        return "not_received"
     lowered = message.lower()
     for reason, keywords in _REASON_KEYWORDS.items():
         if any(kw in lowered for kw in keywords):

@@ -7,6 +7,7 @@ simplification as qualification.py/return_flow.py — a production build would u
 """
 
 from agent.memory.history_store import record_complaint
+from agent.nlp_patterns import mentions_non_delivery
 from agent.rag.rag_query import get_article_by_id
 from config.circuit_breaker import call_with_breaker
 
@@ -41,26 +42,14 @@ _REASON_KEYWORDS = {
         "mauvais article",
         "pas ce que j'ai commandé",
     ),
-    "not_received": (
-        "not received",
-        "never received",
-        "haven't received",
-        "hasn't arrived",
-        "never arrived",
-        "lost",
-        "missing",
-        "pas reçu",
-        "non reçu",
-        "jamais reçu",
-        "introuvable",
-        "perdu",
-        "n'est jamais arrivé",
-        "colis perdu",
-    ),
+    # "not_received" is handled separately by mentions_non_delivery() below — see
+    # agent/nlp_patterns.py for why exact-phrase matching alone isn't robust enough here.
 }
 
 
 def _classify_reason(message: str) -> str:
+    if mentions_non_delivery(message):
+        return "not_received"
     lowered = message.lower()
     for reason, keywords in _REASON_KEYWORDS.items():
         if any(kw in lowered for kw in keywords):
