@@ -18,9 +18,18 @@ from anthropic import AsyncAnthropic
 from config.circuit_breaker import call_with_breaker
 from config.settings import settings
 
-Category = Literal["return_request", "non_delivery", "quality_complaint", "other", "ambiguous"]
+Category = Literal[
+    "return_request", "non_delivery", "quality_complaint", "case_status_question", "other", "ambiguous"
+]
 
-_CATEGORIES: tuple[Category, ...] = ("return_request", "non_delivery", "quality_complaint", "other", "ambiguous")
+_CATEGORIES: tuple[Category, ...] = (
+    "return_request",
+    "non_delivery",
+    "quality_complaint",
+    "case_status_question",
+    "other",
+    "ambiguous",
+)
 
 _client: AsyncAnthropic | None = None
 
@@ -50,6 +59,10 @@ _CLASSIFY_TOOL = {
                     "no physical item in their possession to ship back. "
                     "quality_complaint: the customer has the item but it's damaged, "
                     "defective, not as described, or the wrong item was sent. "
+                    "case_status_question: the customer is asking about the status, outcome, "
+                    "or progress of a request they already made — not describing a new "
+                    "issue (e.g. \"will I get refunded?\", \"has my case been reviewed?\", "
+                    "\"what happens next?\"). "
                     "other: unrelated to returns/complaints/delivery (pricing, promotions, "
                     "general questions, anything out of scope for after-sales support). "
                     "ambiguous: genuinely unclear which of the above applies even considering "

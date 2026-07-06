@@ -73,18 +73,10 @@ def _route_after_identification(state: AgentState) -> str:
 
 
 def _route_after_qualification(state: AgentState) -> str:
-    if state.get("escalated"):
-        return "ESCALATION"
-    intent = state.get("intent")
-    if intent == "return":
-        return "RETURN_FLOW"
-    if intent == "complaint":
-        return "COMPLAINT_FLOW"
-    if intent == "other":
-        return "CONFIRMATION"  # out-of-scope: qualification already sent the redirect reply
-    # intent is still None (ambiguous, asked a clarifying question, not yet at max) — loop
-    # back and wait for the customer's clarification.
-    return "QUALIFICATION"
+    # The actual decision lives in qualification.route_intent so confirmation.py's
+    # post-resolution re-entry (a new/unrelated request arriving after a case is already
+    # closed) can apply the exact same rules without duplicating them.
+    return qualification.route_intent(state)
 
 
 def _route_after_verification(state: AgentState) -> str:
@@ -132,6 +124,15 @@ def _route_after_return_flow(state: AgentState) -> str:
     if state.get("_return_needs_clarification"):
         return "RETURN_FLOW"
     return "VERIFICATION"
+
+
+def _route_after_confirmation(state: AgentState) -> str:
+    # confirmation_node decides everything itself: it either sets current_state back to
+    # "CONFIRMATION" (the turn is done — first time shown, a closing goodbye, or a
+    # case-status answer was given) or re-enters the normal intent-classification pipeline
+    # for a genuinely new/unrelated post-resolution request (RETURN_FLOW/COMPLAINT_FLOW/
+    # QUALIFICATION/ESCALATION) — see confirmation.py. This just relays that decision.
+    return state.get("current_state", "CONFIRMATION")
 
 
 def build_graph():
@@ -188,7 +189,17 @@ def build_graph():
         "AUTO_ACTION", _route_after_auto_action, {"CONFIRMATION": "CONFIRMATION", "ESCALATION": "ESCALATION"}
     )
     graph.add_edge("ESCALATION", "CONFIRMATION")
-    graph.add_edge("CONFIRMATION", END)
+    graph.add_conditional_edges(
+        "CONFIRMATION",
+        _route_after_confirmation,
+        {
+            "CONFIRMATION": END,
+            "RETURN_FLOW": "RETURN_FLOW",
+            "COMPLAINT_FLOW": "COMPLAINT_FLOW",
+            "QUALIFICATION": "QUALIFICATION",
+            "ESCALATION": "ESCALATION",
+        },
+    )
 
     return graph.compile()
 
@@ -233,6 +244,7 @@ _CONDITIONAL_NEXT = {
     "VERIFICATION": _route_after_verification,
     "DECISION": _route_after_decision,
     "AUTO_ACTION": _route_after_auto_action,
+    "CONFIRMATION": _route_after_confirmation,
 }
 
 # States that need the customer's *next* message before they can do meaningful work
@@ -247,7 +259,8 @@ _REQUIRES_FRESH_INPUT = {"IDENTIFICATION", "QUALIFICATION", "RETURN_FLOW", "COMP
 async def run_turn(state: dict) -> dict:
     """Executes one customer turn: runs the node matching the session's `current_state`
     (defaulting to GREETING for a brand-new session), then keeps advancing through nodes
-    that don't need fresh customer input, stopping as soon as one does (or at CONFIRMATION).
+    that don't need fresh customer input, stopping as soon as one does (or the turn loops
+    back on the state it's already in — see the `next_state == current` check below).
 
     This is a deliberate, documented simplification over LangGraph's own `ainvoke`
     traversal: `ainvoke` always starts at the graph's fixed entry point, which doesn't fit a
@@ -260,10 +273,6 @@ async def run_turn(state: dict) -> dict:
     while True:
         state = await _NODES[current](state)
 
-        if current == "CONFIRMATION":
-            state["current_state"] = "CONFIRMATION"
-            return state
-
         next_state = (
             _CONDITIONAL_NEXT[current](state)
             if current in _CONDITIONAL_NEXT
@@ -271,7 +280,12 @@ async def run_turn(state: dict) -> dict:
         )
         state["current_state"] = next_state
 
-        if next_state in _REQUIRES_FRESH_INPUT:
+        # next_state == current covers CONFIRMATION's self-loop: it must run immediately
+        # the first time it's entered (e.g. from AUTO_ACTION, a different `current`) to
+        # compose the final reply in the same turn, but must never re-run itself
+        # automatically afterward on unchanged input once _route_after_confirmation decides
+        # the turn is actually done — see confirmation.py.
+        if next_state == current or next_state in _REQUIRES_FRESH_INPUT:
             return state
 
         current = next_state

@@ -38,6 +38,16 @@ async def qualification_node(state: dict) -> dict:
             "reply": "J'ai des difficultés à traiter votre demande en ce moment — je vous transfère à un collègue.",
         }
 
+    return route_by_category(state, category)
+
+
+def route_by_category(state: dict, category: str) -> dict:
+    """Everything qualification_node does once a category is known — factored out so
+    confirmation_node can reuse it for a new/unrelated request classified after a case has
+    already been closed, reusing the classify_message call it already made instead of a
+    second one (see confirmation.py)."""
+    message = state.get("_latest_message", "")
+
     if category == "other":
         reply = (
             "Cela sort un peu de ce que je peux traiter ici — je m'occupe des retours et "
@@ -102,3 +112,19 @@ async def qualification_node(state: dict) -> dict:
             "collègue qui pourra vous accompagner davantage."
         ),
     }
+
+
+def route_intent(state: dict) -> str:
+    """Decides the next node from qualification's output (intent/escalated) — shared by
+    graph.py's _route_after_qualification and confirmation.py's post-resolution re-entry, so
+    both apply the exact same transition rules instead of duplicating them."""
+    if state.get("escalated"):
+        return "ESCALATION"
+    intent = state.get("intent")
+    if intent == "return":
+        return "RETURN_FLOW"
+    if intent == "complaint":
+        return "COMPLAINT_FLOW"
+    if intent == "other":
+        return "CONFIRMATION"
+    return "QUALIFICATION"

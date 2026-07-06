@@ -9,8 +9,19 @@ discarding the specific message ESCALATION or DECISION had already composed (e.g
 escalation.py's business-hours note). Fixed here: this node only *composes* the reply for
 the happy (auto-approved) path; for escalated/refused/out-of-scope cases it builds on what's
 already there.
+
+Once shown, any further message was previously swallowed into a single static "I'm
+listening" reply no matter what it said — a case-status question ("will I get refunded?")
+and a wholly unrelated question (item price) both got the identical non-answer, and neither
+was ever actually processed again (spec FR-010 intends a clean close, not a dead end). Fixed
+here by reusing classify_message (research.md §4) on every post-confirmation message: a
+genuine status question gets an honest answer from the case's own state; anything else is
+treated as a new request and re-routed through qualification.route_by_category exactly as a
+fresh QUALIFICATION cycle would, keeping the customer already identified.
 """
 
+from agent.states.qualification import route_by_category, route_intent
+from agent.tools.classify_message import classify_message
 from agent.tools.record_refusal import record_refusal
 from config.circuit_breaker import TechnicalFailure
 
@@ -35,12 +46,65 @@ def _is_closing_message(message: str) -> bool:
     return any(kw in lowered for kw in _CLOSING_KEYWORDS)
 
 
+def _case_status_reply(state: dict) -> str:
+    """An honest answer about the existing case's actual outcome — never a guess or a
+    guarantee this node has no authority to make (constitution V.3: the eligibility/refund
+    decision is Java's, not this node's)."""
+    if state.get("escalated"):
+        return (
+            "Votre dossier a été transmis à un collègue qui va l'examiner et vous confirmera "
+            "l'issue exacte — je ne peux pas garantir le résultat moi-même, mais vous serez "
+            "tenu(e) informé(e) sous 24 heures ouvrées."
+        )
+    if state.get("decision") == "refused":
+        return (
+            "Comme indiqué précédemment, cette demande n'a pas pu être approuvée. Si vous "
+            "souhaitez qu'un collègue réexamine votre dossier, dites-le-moi et je fais le "
+            "nécessaire."
+        )
+    if state.get("intent") == "other":
+        return (
+            "Je n'ai pas encore traité de retour ou de réclamation pour vous dans cet "
+            "échange — dites-moi précisément ce dont vous avez besoin et je m'en occupe."
+        )
+    return (
+        "Votre demande a déjà été approuvée et traitée — le retour ou remboursement indiqué "
+        "plus haut est en cours, vous n'avez rien d'autre à faire de votre côté."
+    )
+
+
+# Fields tied to the case that was just closed — reset before re-routing a genuinely new or
+# unrelated post-confirmation request through qualification.route_by_category, so it starts
+# as cleanly as a fresh QUALIFICATION cycle would (constitution VI.1: no stale case_id/
+# attachments/decision leaking into an unrelated new request).
+_RESET_FOR_NEW_REQUEST = {
+    "intent": None,
+    "reason": None,
+    "complaint_description": None,
+    "escalated": False,
+    "escalation_reason": None,
+    "decision": None,
+    "applied_rule": None,
+    "action_result": None,
+    "article_data": None,
+    "case_id": None,
+    "return_id": None,
+    "refund_id": None,
+    "ticket_id": None,
+    "attachments": [],
+    "reformulation_count": 0,
+    "_confirmation_shown": False,
+    "_complaint_needs_clarification": False,
+    "_return_needs_clarification": False,
+    "_non_delivery_checked": False,
+}
+
+
 async def confirmation_node(state: dict) -> dict:
-    # Once CONFIRMATION has been reached and shown once, any further message is the
-    # customer's reply to "anything else?" — every branch below composes its message from
-    # state set earlier in the flow, not the new message, so re-running them verbatim
-    # repeated the exact same closing summary forever instead of ever actually ending the
-    # conversation (spec FR-010 intends a clean close).
+    # Once CONFIRMATION has been reached and shown once, classify the new message instead of
+    # swallowing it into a static reply — a closing acknowledgment ends the session, a
+    # question about the existing case gets an honest status answer, and anything else is a
+    # new or unrelated request re-routed through the normal intent-classification pipeline.
     if state.get("_confirmation_shown"):
         message = state.get("_latest_message", "")
         if _is_closing_message(message):
@@ -50,14 +114,38 @@ async def confirmation_node(state: dict) -> dict:
                 "reply": "Avec plaisir ! N'hésitez pas à revenir vers nous si vous avez besoin d'autre chose.",
                 "_session_ended": True,
             }
-        return {
-            **state,
-            "current_state": "CONFIRMATION",
-            "reply": (
-                "Je suis à votre écoute si vous avez une autre question ou une nouvelle "
-                "demande — n'hésitez pas à me la décrire."
-            ),
-        }
+
+        try:
+            category = await classify_message(message)
+        except TechnicalFailure:
+            return {
+                **state,
+                "escalated": True,
+                "escalation_reason": "service_unavailable",
+                "current_state": "CONFIRMATION",
+                "reply": (
+                    "J'ai des difficultés à traiter votre demande en ce moment — je vous "
+                    "transfère à un collègue."
+                ),
+            }
+
+        if category == "case_status_question":
+            return {**state, "current_state": "CONFIRMATION", "reply": _case_status_reply(state)}
+
+        # Any other category — a new return/complaint, or something genuinely unrelated
+        # (category "other") — is not a follow-up on the closed case, so it must not ride on
+        # its resolved state (constitution V.3: never let a new request slide through
+        # unclassified). Reset and hand off to the exact same routing qualification_node
+        # uses, reusing the category already classified above instead of a second LLM call.
+        result = route_by_category({**state, **_RESET_FOR_NEW_REQUEST}, category)
+        next_state = route_intent(result)
+        result["current_state"] = next_state
+        if next_state == "CONFIRMATION":
+            # intent == "other": this result IS the reply the customer gets this turn, so
+            # it's already "shown" — otherwise the next message would hit the stale
+            # intent == "other" branch below instead of being classified fresh.
+            result["_confirmation_shown"] = True
+        return result
 
     if state.get("escalated"):
         # escalation.py already composed the full hand-off message (ticket reference,

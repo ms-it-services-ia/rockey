@@ -118,17 +118,119 @@ async def test_closing_message_after_confirmation_ends_the_session_instead_of_re
 
 
 @pytest.mark.asyncio
-async def test_non_closing_message_after_confirmation_acknowledges_without_repeating():
+async def test_case_status_question_after_escalation_gives_honest_answer_not_silence():
+    """Regression test: previously EVERY post-confirmation message (closing or not) got the
+    identical static "I'm listening" reply — a genuine question about the case's outcome
+    ("will I get refunded?") deserves an honest answer grounded in the case's actual state,
+    not a non-answer, and constitution V.3 forbids this node from guessing/promising an
+    outcome it doesn't own."""
+    state = _base_state(
+        escalated=True,
+        ticket_id="TCK-abcd1234",
+        _confirmation_shown=True,
+        reply="I'm sorry I couldn't fully resolve this myself...",
+        _latest_message="donc c'est possible que je serai remboursé ?",
+    )
+
+    with patch(
+        "agent.states.confirmation.classify_message", new=AsyncMock(return_value="case_status_question")
+    ):
+        result = await confirmation_node(state)
+
+    assert result["current_state"] == "CONFIRMATION"
+    assert not result.get("_session_ended")
+    assert "collègue" in result["reply"]
+    assert "garantir" in result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_case_status_question_after_auto_approval_confirms_already_processed():
     state = _base_state(
         decision="auto",
         case_id="RET-abcd1234",
-        action_result={"summary": "your return has been approved"},
+        action_result={"summary": "votre retour a été approuvé"},
         _confirmation_shown=True,
-        reply="Here's a summary of your request...",
-        _latest_message="Actually, what about my other order?",
+        reply="Voici un résumé de votre demande...",
+        _latest_message="donc c'est bien remboursé ?",
     )
 
-    result = await confirmation_node(state)
+    with patch(
+        "agent.states.confirmation.classify_message", new=AsyncMock(return_value="case_status_question")
+    ):
+        result = await confirmation_node(state)
 
+    assert result["current_state"] == "CONFIRMATION"
+    assert "déjà été approuvée" in result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_new_return_request_after_confirmation_resets_state_and_reenters_return_flow():
+    """Regression test: an unrelated new request arriving after a case is closed must not be
+    silently absorbed by the generic reply — it re-enters the same intent-classification
+    pipeline QUALIFICATION uses, starting clean (no stale case_id/attachments/decision from
+    the case that was just closed)."""
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        return_id="RET-abcd1234",
+        refund_id="RFD-abcd1234",
+        action_result={"summary": "votre retour a été approuvé"},
+        attachments=[{"type": "return_label", "url": "https://x/y.pdf"}],
+        _confirmation_shown=True,
+        reply="Voici un résumé de votre demande...",
+        _latest_message="En fait, j'ai un autre article à retourner, il est trop grand.",
+    )
+
+    with patch(
+        "agent.states.confirmation.classify_message", new=AsyncMock(return_value="return_request")
+    ):
+        result = await confirmation_node(state)
+
+    assert result["intent"] == "return"
+    assert result["current_state"] == "RETURN_FLOW"
+    assert result["case_id"] is None
+    assert result["return_id"] is None
+    assert result["attachments"] == []
+    assert not result["escalated"]
     assert "RET-abcd1234" not in result["reply"]
-    assert not result.get("_session_ended")
+
+
+@pytest.mark.asyncio
+async def test_unrelated_question_after_confirmation_is_answered_and_marked_shown():
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        action_result={"summary": "votre retour a été approuvé"},
+        _confirmation_shown=True,
+        reply="Voici un résumé de votre demande...",
+        _latest_message="c'est quoi le prix de mon article",
+    )
+
+    with patch("agent.states.confirmation.classify_message", new=AsyncMock(return_value="other")):
+        result = await confirmation_node(state)
+
+    assert result["intent"] == "other"
+    assert result["current_state"] == "CONFIRMATION"
+    assert result["_confirmation_shown"] is True
+    assert "RET-abcd1234" not in result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_technical_failure_classifying_post_confirmation_message_escalates():
+    from config.circuit_breaker import TechnicalFailure
+
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        _confirmation_shown=True,
+        reply="Voici un résumé de votre demande...",
+        _latest_message="et pour mon autre commande ?",
+    )
+
+    with patch(
+        "agent.states.confirmation.classify_message", side_effect=TechnicalFailure("llm", RuntimeError("boom"))
+    ):
+        result = await confirmation_node(state)
+
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == "service_unavailable"
