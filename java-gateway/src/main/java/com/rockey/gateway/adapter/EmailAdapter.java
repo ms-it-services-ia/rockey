@@ -2,8 +2,10 @@ package com.rockey.gateway.adapter;
 
 import com.rockey.gateway.dto.AgentResponse;
 import com.rockey.gateway.dto.InternalMessage;
+import jakarta.mail.Address;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
+import jakarta.mail.internet.InternetAddress;
 import java.io.IOException;
 import org.springframework.stereotype.Component;
 
@@ -16,14 +18,25 @@ import org.springframework.stereotype.Component;
 @Component
 public class EmailAdapter {
 
-    /** The email's Message-ID is both the correlation id and the resumption key
-     * (constitution I.4b — same internal format across channels; spec FR-012 resumption is
-     * per-channel, and a Message-ID only ever appears once, so there's no resumption concept
-     * to speak of for email beyond the natural reply thread). */
+    /** {@code sessionId} is the email's own Message-ID (unique per message, useful for
+     * correlation/logging). {@code clientId} — what {@code session_store.build_session_key}
+     * actually uses for resumption ("same customer + same channel = same session", per its
+     * own docstring, spec FR-012) — MUST be the sender's address instead: a reply is a brand
+     * new message with its own Message-ID, so using that for resumption would put every
+     * single reply in a fresh session, permanently stuck replaying GREETING. */
     public InternalMessage toInternal(String tenantId, Message email) throws MessagingException, IOException {
         String messageId = firstHeaderOrFallback(email, "Message-ID", "email-" + email.getMessageNumber());
+        String senderEmail = extractSenderAddress(email);
         String bodyText = extractPlainText(email);
-        return new InternalMessage(messageId, tenantId, "email", bodyText, messageId);
+        return new InternalMessage(messageId, tenantId, "email", bodyText, senderEmail);
+    }
+
+    private String extractSenderAddress(Message email) throws MessagingException {
+        Address[] from = email.getFrom();
+        if (from == null || from.length == 0) {
+            throw new MessagingException("email has no From address");
+        }
+        return from[0] instanceof InternetAddress internetAddress ? internetAddress.getAddress() : from[0].toString();
     }
 
     private String firstHeaderOrFallback(Message email, String headerName, String fallback) throws MessagingException {

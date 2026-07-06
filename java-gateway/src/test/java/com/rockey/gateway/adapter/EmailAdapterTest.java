@@ -6,6 +6,8 @@ import static org.mockito.Mockito.when;
 import com.rockey.gateway.dto.AgentResponse;
 import com.rockey.gateway.dto.InternalMessage;
 import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
+import jakarta.mail.internet.InternetAddress;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -20,14 +22,18 @@ class EmailAdapterTest {
     @Mock private Message email;
 
     @Test
-    void toInternal_usesMessageIdAsSessionAndClientId() throws Exception {
+    void toInternal_usesMessageIdAsSessionIdAndSenderAddressAsClientId() throws Exception {
+        // session_store resumes by (tenant, channel, client_id) — a reply has its own new
+        // Message-ID, so client_id must be the stable sender address, not the Message-ID,
+        // or every reply would start a brand new session stuck replaying GREETING.
         when(email.getHeader("Message-ID")).thenReturn(new String[] {"<abc123@mail.example.com>"});
+        when(email.getFrom()).thenReturn(new jakarta.mail.Address[] {new InternetAddress("marie.dupont@email.com")});
         when(email.getContent()).thenReturn("I'd like to return my order.");
 
         InternalMessage result = emailAdapter.toInternal("vinted", email);
 
         assertThat(result.sessionId()).isEqualTo("<abc123@mail.example.com>");
-        assertThat(result.clientId()).isEqualTo("<abc123@mail.example.com>");
+        assertThat(result.clientId()).isEqualTo("marie.dupont@email.com");
         assertThat(result.tenantId()).isEqualTo("vinted");
         assertThat(result.channel()).isEqualTo("email");
         assertThat(result.message()).isEqualTo("I'd like to return my order.");
@@ -37,11 +43,21 @@ class EmailAdapterTest {
     void edgeCase_missingMessageIdHeaderFallsBackToMessageNumber() throws Exception {
         when(email.getHeader("Message-ID")).thenReturn(null);
         when(email.getMessageNumber()).thenReturn(7);
+        when(email.getFrom()).thenReturn(new jakarta.mail.Address[] {new InternetAddress("marie.dupont@email.com")});
         when(email.getContent()).thenReturn("Hello");
 
         InternalMessage result = emailAdapter.toInternal("vinted", email);
 
         assertThat(result.sessionId()).isEqualTo("email-7");
+    }
+
+    @Test
+    void edgeCase_missingFromAddressRaisesRatherThanSilentlyMisidentifyingTheCustomer() throws Exception {
+        when(email.getHeader("Message-ID")).thenReturn(new String[] {"<abc123@mail.example.com>"});
+        when(email.getFrom()).thenReturn(null);
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+                MessagingException.class, () -> emailAdapter.toInternal("vinted", email));
     }
 
     @Test
