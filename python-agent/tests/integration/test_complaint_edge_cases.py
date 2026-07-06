@@ -36,7 +36,7 @@ async def test_vague_description_asks_for_clarification():
     assert result["_complaint_needs_clarification"] is True
     assert result["reformulation_count"] == 1
     assert not result.get("escalated")
-    assert "more about the problem" in result["reply"]
+    assert "plus sur le problème" in result["reply"]
 
 
 @pytest.mark.asyncio

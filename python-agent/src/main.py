@@ -54,8 +54,8 @@ _SUPPORTED_CHANNELS = {"web", "email"}
 
 
 _FALLBACK_CHANNEL_UNAVAILABLE_MESSAGE = (
-    "Sorry, this contact channel isn't available right now. Please reach us instead "
-    "through our web chat widget."
+    "Désolée, ce canal de contact n'est pas disponible pour le moment. Merci de nous "
+    "contacter via notre widget de chat en ligne."
 )
 
 

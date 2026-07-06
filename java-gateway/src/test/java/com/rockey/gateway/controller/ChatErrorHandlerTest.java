@@ -56,7 +56,7 @@ class ChatErrorHandlerTest {
         var response = handler.handleUnexpectedError(new NullPointerException(), request);
 
         assertThat(response.getBody().reply()).doesNotContain("null");
-        assertThat(response.getBody().reply()).contains("try again");
+        assertThat(response.getBody().reply()).contains("réessayer");
         assertThat(response.getBody().escalated()).isFalse();
     }
 
@@ -70,6 +70,6 @@ class ChatErrorHandlerTest {
 
         var response = handler.handleUnexpectedError(new RuntimeException("boom"), request);
 
-        assertThat(response.getBody().reply()).contains("try again");
+        assertThat(response.getBody().reply()).contains("réessayer");
     }
 }

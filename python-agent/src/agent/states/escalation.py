@@ -64,23 +64,26 @@ async def escalation_node(state: dict) -> dict:
             applied_rule=state.get("applied_rule"),
         )
         ticket_id = ticket.get("ticketId")
-        delay = ticket.get("delay", "as soon as possible")
+        delay = ticket.get("delay", "dès que possible")
     except TechnicalFailure:
         # Even if ticket creation itself fails, the customer-facing outcome MUST still be an
         # honest "you're being escalated" message (constitution VI.1 — never a raw error) —
         # escalated stays True either way; a human will need to pick this up out-of-band.
         ticket_id = None
-        delay = "as soon as possible"
+        delay = "dès que possible"
 
     reply = (
-        "I'm sorry I couldn't fully resolve this myself — I've passed your case to a "
-        f"member of our team, who will get back to you {delay}."
-        + (f" Your reference is {ticket_id}." if ticket_id else "")
+        "Je suis désolée de ne pas avoir pu résoudre cela moi-même — j'ai transmis votre "
+        f"dossier à un membre de notre équipe, qui reviendra vers vous {delay}."
+        + (f" Votre référence est {ticket_id}." if ticket_id else "")
     )
     if _is_outside_business_hours():
         # Edge case (spec User Story 4): escalation outside business hours -> waiting
         # message with an expected response time, rather than implying someone is online now.
-        reply += " Our team is currently offline outside business hours, so it may take a little longer than usual."
+        reply += (
+            " Notre équipe est actuellement hors ligne en dehors des heures d'ouverture, "
+            "cela pourrait donc prendre un peu plus de temps que d'habitude."
+        )
 
     return {
         **state,

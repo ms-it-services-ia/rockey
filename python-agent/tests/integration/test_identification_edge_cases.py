@@ -27,7 +27,7 @@ async def test_cant_find_order_number_gets_guidance_message():
 
     result = await identification_node(state)
 
-    assert "confirmation email" in result["reply"]
+    assert "email de confirmation" in result["reply"]
     assert result["identification_attempts"] == 0  # not a failed attempt — nothing was checked
     assert not result.get("escalated")
 
@@ -40,7 +40,7 @@ async def test_skip_identification_is_blocked():
     result = await identification_node(state)
 
     assert result["current_state"] == "IDENTIFICATION"
-    assert "order number" in result["reply"]
+    assert "numéro de commande" in result["reply"]
     assert result.get("client_email") is None
     assert result.get("order_id") is None
 

@@ -79,8 +79,8 @@ async def complaint_flow_node(state: dict) -> dict:
     if _is_vague(message) and state.get("reformulation_count", 0) < MAX_CLARIFICATIONS:
         reformulations = state.get("reformulation_count", 0) + 1
         reply = (
-            "Could you tell me a bit more about the problem? For example, what exactly is "
-            "wrong with the item?"
+            "Pourriez-vous m'en dire un peu plus sur le problème ? Par exemple, qu'est-ce "
+            "qui ne va pas exactement avec l'article ?"
         )
         return {
             **state,
@@ -109,8 +109,9 @@ async def complaint_flow_node(state: dict) -> dict:
             "escalation_reason": "repeated_complaint",
             "current_state": "COMPLAINT_FLOW",
             "reply": (
-                "I can see you've reported an issue with this item before — let me bring in "
-                "a colleague who can look at the full history and help resolve this."
+                "Je vois que vous avez déjà signalé un problème avec cet article — je fais "
+                "intervenir un collègue qui pourra consulter l'historique complet et vous "
+                "aider à résoudre cela."
             ),
         }
 

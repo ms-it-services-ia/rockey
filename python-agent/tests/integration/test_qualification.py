@@ -35,7 +35,7 @@ async def test_classifies_out_of_scope_and_redirects_without_processing():
     result = await qualification_node(_state("What's the discount on your next promo?"))
     assert result["intent"] == "other"
     assert not result.get("escalated")
-    assert "customer service team" in result["reply"]
+    assert "service client" in result["reply"]
 
 
 @pytest.mark.asyncio

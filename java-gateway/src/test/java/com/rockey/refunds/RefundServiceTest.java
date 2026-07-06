@@ -14,7 +14,7 @@ class RefundServiceTest {
         var result = refundService.triggerRefund("vinted", "CMD-2026-00001", new BigDecimal("68.00"));
 
         assertThat(result.refundId()).startsWith("RFD-");
-        assertThat(result.delay()).isEqualTo("3-5 business days");
+        assertThat(result.delay()).isEqualTo("3 à 5 jours ouvrés");
     }
 
     @Test

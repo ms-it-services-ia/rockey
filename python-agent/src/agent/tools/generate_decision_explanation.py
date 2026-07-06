@@ -54,7 +54,7 @@ async def generate_decision_explanation(
             retailer_name=tenant_id.capitalize(),
             agent_tone=tenant_config.get("agentTone") or "professional",
             agent_formality=tenant_config.get("agentFormality") or "formal",
-            agent_language=tenant_config.get("agentLanguage") or "English",
+            agent_language=tenant_config.get("agentLanguage") or "French",
             policy_context=policy_context,
             article_context=article_context,
             channel=channel,
