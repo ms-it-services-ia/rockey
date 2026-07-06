@@ -40,25 +40,58 @@ async def test_vague_description_asks_for_clarification():
 
 
 @pytest.mark.asyncio
-async def test_still_vague_after_max_clarifications_proceeds_anyway():
-    """After MAX_CLARIFICATIONS, the agent stops asking and proceeds with what it has,
-    rather than blocking the customer forever."""
+async def test_still_unclear_after_max_clarifications_escalates():
+    """After MAX_CLARIFICATIONS, the agent stops asking and escalates (Complaint Policy §4:
+    "If the issue remains unclear after 2 clarifications, escalate to a human agent") — it
+    must never silently proceed with an unclassified reason and let the case slide into
+    auto-approval (constitution V.3)."""
     state = _complaint_state(_latest_message="bad", reformulation_count=MAX_CLARIFICATIONS)
 
-    with (
-        patch(
-            "agent.states.complaint_flow.get_article_by_id",
-            new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
-        ),
-        patch(
-            "agent.states.complaint_flow.record_complaint",
-            new=AsyncMock(return_value={"priorComplaintCount": 0, "isRepeat": False}),
-        ),
-    ):
-        result = await complaint_flow_node(state)
+    result = await complaint_flow_node(state)
 
-    assert result.get("_complaint_needs_clarification") is False
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == "qualification_unclear"
     assert result["reason"] == "other"
+
+
+@pytest.mark.asyncio
+async def test_unclassifiable_but_not_short_reason_still_triggers_clarification():
+    """Regression test: a message long enough to pass the length check but matching no known
+    reason keyword (e.g. a customer's pushback like "I already said the reason") must not be
+    silently treated as an understood, resolvable complaint."""
+    state = _complaint_state(_latest_message="I already told you the reason for this")
+
+    result = await complaint_flow_node(state)
+
+    assert result["current_state"] == "COMPLAINT_FLOW"
+    assert result["_complaint_needs_clarification"] is True
+    assert not result.get("escalated")
+
+
+@pytest.mark.asyncio
+async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_auto_resolves():
+    """Return Policy §12/§9: a non-delivery claim has no physical item to return — must ask
+    the customer to verify with household/neighbors first, then escalate; must never reach
+    VERIFICATION/DECISION/AUTO_ACTION (which would generate a nonsensical return label)."""
+    state = _complaint_state(_latest_message="I never received my item, nothing in my mailbox.")
+
+    with patch(
+        "agent.states.complaint_flow.get_article_by_id",
+        new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
+    ):
+        first = await complaint_flow_node(state)
+
+    assert first["current_state"] == "COMPLAINT_FLOW"
+    assert first["reason"] == "not_received"
+    assert not first.get("escalated")
+    assert "vérifier" in first["reply"]
+
+    second_state = {**first, "_latest_message": "I checked, no one has it, still missing."}
+    second = await complaint_flow_node(second_state)
+
+    assert second["escalated"] is True
+    assert second["escalation_reason"] == "non_delivery_claim"
+    assert second["reason"] == "not_received"
 
 
 @pytest.mark.asyncio

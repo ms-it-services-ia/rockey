@@ -29,6 +29,7 @@ _REASON_LABELS = {
     "legal_warranty": "the complaint is past the standard return window but within the legal warranty period",
     "repeated_complaint": "the customer has complained about this item before",
     "technical_action_failed": "a technical error occurred while finalizing the action",
+    "non_delivery_claim": "customer reports the item was never received (SNAD/non-delivery, Return Policy §12)",
 }
 
 

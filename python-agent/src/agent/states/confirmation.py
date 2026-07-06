@@ -14,16 +14,59 @@ already there.
 from agent.tools.record_refusal import record_refusal
 from config.circuit_breaker import TechnicalFailure
 
+_CLOSING_KEYWORDS = (
+    "no thanks",
+    "no, thanks",
+    "nothing else",
+    "that's all",
+    "that's it",
+    "i'm good",
+    "non merci",
+    "non, merci",
+    "rien d'autre",
+    "c'est tout",
+    "ça sera tout",
+    "c'est bon",
+)
+
+
+def _is_closing_message(message: str) -> bool:
+    lowered = message.strip().lower()
+    return any(kw in lowered for kw in _CLOSING_KEYWORDS)
+
 
 async def confirmation_node(state: dict) -> dict:
+    # Once CONFIRMATION has been reached and shown once, any further message is the
+    # customer's reply to "anything else?" — every branch below composes its message from
+    # state set earlier in the flow, not the new message, so re-running them verbatim
+    # repeated the exact same closing summary forever instead of ever actually ending the
+    # conversation (spec FR-010 intends a clean close).
+    if state.get("_confirmation_shown"):
+        message = state.get("_latest_message", "")
+        if _is_closing_message(message):
+            return {
+                **state,
+                "current_state": "CONFIRMATION",
+                "reply": "Avec plaisir ! N'hésitez pas à revenir vers nous si vous avez besoin d'autre chose.",
+                "_session_ended": True,
+            }
+        return {
+            **state,
+            "current_state": "CONFIRMATION",
+            "reply": (
+                "Je suis à votre écoute si vous avez une autre question ou une nouvelle "
+                "demande — n'hésitez pas à me la décrire."
+            ),
+        }
+
     if state.get("escalated"):
         # escalation.py already composed the full hand-off message (ticket reference,
         # business-hours note if applicable) — nothing to add.
-        return {**state, "current_state": "CONFIRMATION"}
+        return {**state, "current_state": "CONFIRMATION", "_confirmation_shown": True}
 
     if state.get("intent") == "other":
         # Out-of-scope redirect — qualification.py's reply already stands alone.
-        return {**state, "current_state": "CONFIRMATION"}
+        return {**state, "current_state": "CONFIRMATION", "_confirmation_shown": True}
 
     if state.get("decision") == "refused":
         order_data = state.get("order_data") or {}
@@ -46,7 +89,7 @@ async def confirmation_node(state: dict) -> dict:
             # the refusal itself already stands; only the case-tracking record failed.
             # base_reply is already a complete, self-contained message (see decision.py's
             # prompt), so nothing further needs to be appended here.
-            return {**state, "current_state": "CONFIRMATION", "reply": base_reply}
+            return {**state, "current_state": "CONFIRMATION", "reply": base_reply, "_confirmation_shown": True}
 
         # base_reply may be LLM-composed in the tenant's configured language (constitution
         # I.7) and is already a complete, self-contained message — appending an English
@@ -54,7 +97,13 @@ async def confirmation_node(state: dict) -> dict:
         # language-neutral bracketed form instead.
         case_id = refusal_record.get("caseId")
         reply = f"{base_reply} [{case_id}]"
-        return {**state, "case_id": case_id, "current_state": "CONFIRMATION", "reply": reply}
+        return {
+            **state,
+            "case_id": case_id,
+            "current_state": "CONFIRMATION",
+            "reply": reply,
+            "_confirmation_shown": True,
+        }
 
     # Auto-approved happy path (decision == "auto"): compose the closing summary here —
     # AUTO_ACTION deliberately leaves the final customer-facing reply to this node.
@@ -65,4 +114,4 @@ async def confirmation_node(state: dict) -> dict:
         f"{action.get('summary', 'votre demande a été traitée')}. "
         "Puis-je encore vous aider avec autre chose ?"
     )
-    return {**state, "current_state": "CONFIRMATION", "reply": reply}
+    return {**state, "current_state": "CONFIRMATION", "reply": reply, "_confirmation_shown": True}

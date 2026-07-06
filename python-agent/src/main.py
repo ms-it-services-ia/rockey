@@ -115,7 +115,14 @@ async def process_message(
 
         result = await run_turn(state)
 
-        await session_store.save_session(session_key, result)
+        if result.get("_session_ended"):
+            # confirmation.py detected a closing acknowledgment ("no thanks", etc.) after
+            # the case was already resolved — end the session cleanly (spec FR-010) so the
+            # next contact starts a fresh GREETING instead of looping on the same closing
+            # summary forever.
+            await session_store.delete_session(session_key)
+        else:
+            await session_store.save_session(session_key, result)
 
         return ChatResponse(
             session_id=payload.session_id,

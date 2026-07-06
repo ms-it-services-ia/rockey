@@ -20,6 +20,20 @@ _ELIGIBILITY_REASON_FR = {
 
 
 async def decision_node(state: dict) -> dict:
+    # Return Policy §12/§9: a non-delivery claim has no physical item to return, so it must
+    # never reach an auto-approval that would generate a return label — this is a
+    # defense-in-depth guard alongside complaint_flow.py's own handling, since return_flow.py
+    # has no equivalent early-exit and would otherwise reach this point unguarded if intent
+    # was ever classified as "return" for a message describing a lost/missing item.
+    if state.get("reason") == "not_received":
+        return {
+            **state,
+            "decision": "escalated",
+            "escalated": True,
+            "escalation_reason": "non_delivery_claim",
+            "current_state": "DECISION",
+        }
+
     if not state.get("eligible"):
         eligibility_reason = (state.get("action_result") or {}).get("eligibility_reason", "")
         reason_fr = _ELIGIBILITY_REASON_FR.get(eligibility_reason, eligibility_reason)

@@ -31,6 +31,27 @@ _REASON_KEYWORDS = {
         "différent de",
         "pas ce que j'ai commandé",
     ),
+    # Defense-in-depth (Return Policy §12/§9): if a non-delivery message ever ends up
+    # classified as "return" intent rather than "complaint" (e.g. it didn't happen to use
+    # any of qualification.py's complaint keywords), this still tags it correctly so
+    # decision.py's guard can escalate instead of generating a nonsensical return label for
+    # an item the customer never received.
+    "not_received": (
+        "not received",
+        "never received",
+        "haven't received",
+        "hasn't arrived",
+        "never arrived",
+        "lost",
+        "missing",
+        "pas reçu",
+        "non reçu",
+        "jamais reçu",
+        "introuvable",
+        "perdu",
+        "n'est jamais arrivé",
+        "colis perdu",
+    ),
 }
 
 

@@ -81,3 +81,54 @@ async def test_out_of_scope_case_preserves_qualifications_redirect_reply():
     result = await confirmation_node(state)
 
     assert result["reply"] == state["reply"]
+
+
+@pytest.mark.asyncio
+async def test_first_visit_marks_confirmation_as_shown():
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        action_result={"summary": "your return has been approved"},
+    )
+
+    result = await confirmation_node(state)
+
+    assert result["_confirmation_shown"] is True
+
+
+@pytest.mark.asyncio
+async def test_closing_message_after_confirmation_ends_the_session_instead_of_repeating():
+    """Regression test: previously, every message received after CONFIRMATION re-ran the
+    same branch and repeated the exact same closing summary verbatim, forever, since nothing
+    looked at the new message content at all."""
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        action_result={"summary": "your return has been approved"},
+        _confirmation_shown=True,
+        reply="Here's a summary of your request...",
+        _latest_message="No thanks, that's all!",
+    )
+
+    result = await confirmation_node(state)
+
+    assert result["reply"] != state["reply"]
+    assert "RET-abcd1234" not in result["reply"]
+    assert result["_session_ended"] is True
+
+
+@pytest.mark.asyncio
+async def test_non_closing_message_after_confirmation_acknowledges_without_repeating():
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        action_result={"summary": "your return has been approved"},
+        _confirmation_shown=True,
+        reply="Here's a summary of your request...",
+        _latest_message="Actually, what about my other order?",
+    )
+
+    result = await confirmation_node(state)
+
+    assert "RET-abcd1234" not in result["reply"]
+    assert not result.get("_session_ended")

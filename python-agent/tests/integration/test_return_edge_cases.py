@@ -45,6 +45,25 @@ async def test_final_clearance_item_is_refused_not_escalated():
 
 
 @pytest.mark.asyncio
+async def test_non_delivery_reason_always_escalates_never_reaches_auto_approval():
+    """Defense-in-depth (Return Policy §12/§9): even if a non-delivery message was ever
+    classified as "return" intent (return_flow.py has no clarification loop of its own),
+    decision.py must never let it reach auto-approval — there's no physical item to ship
+    back, so generating a return label would be nonsensical."""
+    state = _base_state(
+        reason="not_received",
+        eligible=True,
+        action_result={"eligibility_reason": "Eligible for return", "auto_approvable": True},
+    )
+
+    result = await decision_node(state)
+
+    assert result["decision"] == "escalated"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == "non_delivery_claim"
+
+
+@pytest.mark.asyncio
 async def test_amount_above_auto_refund_threshold_escalates():
     """Edge case: amount above the auto-refund threshold -> escalation with full context,
     even though the item is otherwise eligible."""
