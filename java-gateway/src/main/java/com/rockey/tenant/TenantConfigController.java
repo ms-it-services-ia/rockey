@@ -35,7 +35,9 @@ public class TenantConfigController {
                                                 tc.isChannelEmailActive(),
                                                 tc.isChannelSlackActive(),
                                                 tc.getChannelSlackChannel(),
-                                                tc.getDriveFolderId())))
+                                                tc.getDriveFolderId(),
+                                                tc.getErrorMessageGeneric(),
+                                                tc.getErrorMessageChannelUnavailable())))
                 .orElseGet(() -> ResponseEntity.notFound().build());
     }
 }

@@ -46,7 +46,7 @@ async def test_same_return_request_yields_identical_decision_on_web_and_email():
         ),
         patch(
             "agent.states.auto_action.create_return_label",
-            new=AsyncMock(return_value={"returnId": "RET-abcd1234", "labelUrl": "https://labels.rockey.local/LBL-abcd1234.pdf"}),
+            new=AsyncMock(return_value={"returnId": "RET-abcd1234", "labelUrl": "https://returns.vinted.local/LBL-abcd1234.pdf"}),
         ),
         patch(
             "agent.states.auto_action.trigger_refund",

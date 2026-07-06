@@ -67,3 +67,13 @@ def test_active_email_channel_proceeds_normally():
 
 def test_web_channel_always_available():
     assert unavailable_channel_reply({}, "web") is None
+
+
+def test_uses_the_tenants_own_configured_message_when_present():
+    # Constitution VI.4: the message comes from the retailer's own config, not a hardcoded
+    # platform string — this tenant's own copy must win over the module-level fallback.
+    tenant_config = {"channelEmailActive": False, "errorMessageChannelUnavailable": "Ce canal est indisponible."}
+
+    reply = unavailable_channel_reply(tenant_config, "email")
+
+    assert reply == "Ce canal est indisponible."

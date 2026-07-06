@@ -51,7 +51,7 @@ class EmailAdapterTest {
                         "s1",
                         "CONFIRMATION",
                         "Your return has been approved.",
-                        List.of(new AgentResponse.Attachment("return_label", "https://labels.rockey.local/x.pdf")),
+                        List.of(new AgentResponse.Attachment("return_label", "https://returns.vinted.local/x.pdf")),
                         false,
                         "RET-abcd1234");
 
