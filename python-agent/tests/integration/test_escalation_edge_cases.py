@@ -44,7 +44,7 @@ async def test_escalation_outside_business_hours_adds_waiting_message():
         mock_datetime.now.return_value = weekend_night
         result = await escalation_node(_escalated_state())
 
-    assert "currently offline" in result["reply"]
+    assert "hors ligne" in result["reply"]
 
 
 @pytest.mark.asyncio

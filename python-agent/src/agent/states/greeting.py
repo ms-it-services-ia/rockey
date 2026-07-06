@@ -16,9 +16,9 @@ async def greeting_node(state: dict) -> dict:
     retailer_name = _retailer_display_name(state["tenant_id"])
 
     reply = (
-        f"Hello, I'm {agent_name}, {retailer_name}'s customer service assistant. "
-        "To get started, could you give me your order number and the email address used "
-        "for that order?"
+        f"Bonjour, je suis {agent_name}, l'assistante du service client {retailer_name}. "
+        "Pour commencer, pourriez-vous me communiquer votre numéro de commande ainsi que "
+        "l'adresse email utilisée pour cette commande ?"
     )
 
     return {**state, "current_state": "GREETING", "reply": reply}

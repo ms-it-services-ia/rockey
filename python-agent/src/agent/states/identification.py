@@ -33,9 +33,9 @@ async def identification_node(state: dict) -> dict:
     # order number nor an email) — hold the step without spending an attempt.
     if not order_id or not email:
         reply = (
-            "I'll need your order number (e.g. CMD-2026-00001) and the email address used "
-            "for that order before I can help — you'll find the order number in your "
-            "confirmation email."
+            "J'aurai besoin de votre numéro de commande (par exemple CMD-2026-00001) ainsi "
+            "que de l'adresse email utilisée pour cette commande avant de pouvoir vous "
+            "aider — vous trouverez le numéro de commande dans votre email de confirmation."
         )
         return {**state, "current_state": "IDENTIFICATION", "reply": reply}
 
@@ -46,8 +46,8 @@ async def identification_node(state: dict) -> dict:
         if attempts < 2:
             # Edge case: order not found on the first attempt — offer to re-verify.
             reply = (
-                "I couldn't find an order matching that number and email — could you "
-                "double-check them and try again?"
+                "Je n'ai pas trouvé de commande correspondant à ce numéro et cet email — "
+                "pourriez-vous vérifier ces informations et réessayer ?"
             )
             return {**state, "identification_attempts": attempts, "current_state": "IDENTIFICATION", "reply": reply}
 
@@ -55,8 +55,9 @@ async def identification_node(state: dict) -> dict:
         # this message never reveals whether the order belongs to a different retailer or
         # simply doesn't exist, so no cross-tenant information ever leaks to the customer.
         reply = (
-            "I still can't find a matching order after two attempts. Let me transfer you "
-            "to a member of our team who can look into this further."
+            "Je ne parviens toujours pas à trouver de commande correspondante après deux "
+            "tentatives. Je vous transfère à un membre de notre équipe qui pourra "
+            "approfondir la recherche."
         )
         return {
             **state,
@@ -72,12 +73,15 @@ async def identification_node(state: dict) -> dict:
             "escalated": True,
             "escalation_reason": "service_unavailable",
             "current_state": "IDENTIFICATION",
-            "reply": "I'm having trouble reaching our order system right now — let me transfer you to a colleague.",
+            "reply": (
+                "J'ai des difficultés à joindre notre système de commandes en ce moment — "
+                "je vous transfère à un collègue."
+            ),
         }
 
     reply = (
-        f"Thanks, {order_data['clientName']}! I can see your order for {order_data['articleId']}. "
-        "How can I help you with it?"
+        f"Merci, {order_data['clientName']} ! Je vois bien votre commande pour "
+        f"{order_data['articleId']}. Comment puis-je vous aider ?"
     )
     return {
         **state,

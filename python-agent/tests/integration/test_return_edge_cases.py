@@ -41,7 +41,7 @@ async def test_final_clearance_item_is_refused_not_escalated():
 
     assert result["decision"] == "refused"
     assert not result["escalated"]
-    assert "destockage" in result["reply"]
+    assert "déstockage" in result["reply"]
 
 
 @pytest.mark.asyncio

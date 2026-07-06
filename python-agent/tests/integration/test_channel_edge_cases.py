@@ -47,7 +47,7 @@ def test_inactive_email_channel_returns_alternative_channel_message():
     reply = unavailable_channel_reply(tenant_config, "email")
 
     assert reply is not None
-    assert "web chat" in reply
+    assert "chat en ligne" in reply
 
 
 def test_unsupported_channel_returns_alternative_channel_message():
@@ -56,7 +56,7 @@ def test_unsupported_channel_returns_alternative_channel_message():
     reply = unavailable_channel_reply(tenant_config, "sms")
 
     assert reply is not None
-    assert "web chat" in reply
+    assert "chat en ligne" in reply
 
 
 def test_active_email_channel_proceeds_normally():

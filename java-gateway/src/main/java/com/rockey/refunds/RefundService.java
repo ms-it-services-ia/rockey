@@ -14,6 +14,6 @@ public class RefundService {
 
     public RefundResult triggerRefund(String tenantId, String orderId, BigDecimal amount) {
         String refundId = "RFD-" + UUID.randomUUID().toString().substring(0, 8);
-        return new RefundResult(refundId, "3-5 business days");
+        return new RefundResult(refundId, "3 à 5 jours ouvrés");
     }
 }

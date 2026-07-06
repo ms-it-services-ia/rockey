@@ -2,8 +2,12 @@ package com.rockey.gateway.adapter;
 
 import com.rockey.gateway.dto.AgentResponse;
 import com.rockey.gateway.dto.InternalMessage;
+import jakarta.mail.Address;
+import jakarta.mail.BodyPart;
 import jakarta.mail.Message;
 import jakarta.mail.MessagingException;
+import jakarta.mail.Multipart;
+import jakarta.mail.internet.InternetAddress;
 import java.io.IOException;
 import org.springframework.stereotype.Component;
 
@@ -16,14 +20,25 @@ import org.springframework.stereotype.Component;
 @Component
 public class EmailAdapter {
 
-    /** The email's Message-ID is both the correlation id and the resumption key
-     * (constitution I.4b — same internal format across channels; spec FR-012 resumption is
-     * per-channel, and a Message-ID only ever appears once, so there's no resumption concept
-     * to speak of for email beyond the natural reply thread). */
+    /** {@code sessionId} is the email's own Message-ID (unique per message, useful for
+     * correlation/logging). {@code clientId} — what {@code session_store.build_session_key}
+     * actually uses for resumption ("same customer + same channel = same session", per its
+     * own docstring, spec FR-012) — MUST be the sender's address instead: a reply is a brand
+     * new message with its own Message-ID, so using that for resumption would put every
+     * single reply in a fresh session, permanently stuck replaying GREETING. */
     public InternalMessage toInternal(String tenantId, Message email) throws MessagingException, IOException {
         String messageId = firstHeaderOrFallback(email, "Message-ID", "email-" + email.getMessageNumber());
+        String senderEmail = extractSenderAddress(email);
         String bodyText = extractPlainText(email);
-        return new InternalMessage(messageId, tenantId, "email", bodyText, messageId);
+        return new InternalMessage(messageId, tenantId, "email", bodyText, senderEmail);
+    }
+
+    private String extractSenderAddress(Message email) throws MessagingException {
+        Address[] from = email.getFrom();
+        if (from == null || from.length == 0) {
+            throw new MessagingException("email has no From address");
+        }
+        return from[0] instanceof InternetAddress internetAddress ? internetAddress.getAddress() : from[0].toString();
     }
 
     private String firstHeaderOrFallback(Message email, String headerName, String fallback) throws MessagingException {
@@ -31,13 +46,49 @@ public class EmailAdapter {
         return (values != null && values.length > 0) ? values[0] : fallback;
     }
 
-    /** POC-level simplification: reads the message content as text, without walking a
-     * multipart MIME tree for the text/plain part specifically — sufficient for the
-     * plain-text confirmation emails this POC's test fixtures use. */
+    /** Real mail clients (Gmail's web UI included) almost always send multipart/alternative
+     * (text/plain + text/html), never a bare String body — walks that tree for the
+     * text/plain part, falling back to a naive HTML-tag strip of text/html if that's all
+     * there is. Without this, {@code email.getContent()} returns a {@link Multipart} object
+     * whose {@code toString()} (e.g. "jakarta.mail.internet.MimeMultipart@1a2b3c") was
+     * silently being fed to the agent as the "message" — never containing an order number
+     * or email, so identification could never succeed on a real reply. */
     public String extractPlainText(Message email) throws MessagingException, IOException {
         Object content = email.getContent();
-        String text = content instanceof String s ? s : String.valueOf(content);
-        return text.strip();
+        if (content instanceof String s) {
+            return s.strip();
+        }
+        if (content instanceof Multipart multipart) {
+            return extractFromMultipart(multipart).strip();
+        }
+        return String.valueOf(content).strip();
+    }
+
+    private String extractFromMultipart(Multipart multipart) throws MessagingException, IOException {
+        String htmlFallback = null;
+        for (int i = 0; i < multipart.getCount(); i++) {
+            BodyPart part = multipart.getBodyPart(i);
+            if (part.isMimeType("text/plain") && part.getDisposition() == null) {
+                return String.valueOf(part.getContent());
+            }
+            if (part.getContent() instanceof Multipart nested) {
+                String nestedText = extractFromMultipart(nested);
+                if (!nestedText.isBlank()) {
+                    return nestedText;
+                }
+            } else if (htmlFallback == null && part.isMimeType("text/html") && part.getDisposition() == null) {
+                htmlFallback = stripHtml(String.valueOf(part.getContent()));
+            }
+        }
+        return htmlFallback != null ? htmlFallback : "";
+    }
+
+    private String stripHtml(String html) {
+        return html.replaceAll("(?i)<br\\s*/?>", "\n")
+                .replaceAll("<[^>]+>", " ")
+                .replace("&nbsp;", " ")
+                .replace("&amp;", "&")
+                .strip();
     }
 
     public String formatOutboundSubject(String caseId) {

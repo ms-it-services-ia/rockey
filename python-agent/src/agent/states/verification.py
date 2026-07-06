@@ -23,7 +23,10 @@ async def verification_node(state: dict) -> dict:
             "escalated": True,
             "escalation_reason": "service_unavailable",
             "current_state": "VERIFICATION",
-            "reply": "I'm having trouble checking your eligibility right now — let me bring in a colleague to help.",
+            "reply": (
+                "J'ai des difficultés à vérifier votre éligibilité en ce moment — je fais "
+                "intervenir un collègue pour vous aider."
+            ),
         }
 
     return {

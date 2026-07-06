@@ -34,8 +34,8 @@ async def auto_action_node(state: dict) -> dict:
             "escalation_reason": "technical_action_failed",
             "current_state": "AUTO_ACTION",
             "reply": (
-                "I approved your return, but hit a technical snag finalizing it — "
-                "a colleague will pick this up right away."
+                "J'ai approuvé votre retour, mais j'ai rencontré un souci technique pour le "
+                "finaliser — un collègue va s'en occuper immédiatement."
             ),
         }
 
@@ -47,8 +47,8 @@ async def auto_action_node(state: dict) -> dict:
         "action_result": {
             **(state.get("action_result") or {}),
             "summary": (
-                f"your return has been approved — label: {return_result['labelUrl']}, "
-                f"refund reference {refund_result['refundId']} ({refund_result['delay']})"
+                f"votre retour a été approuvé — étiquette : {return_result['labelUrl']}, "
+                f"référence de remboursement {refund_result['refundId']} ({refund_result['delay']})"
             ),
         },
         "attachments": [{"type": "return_label", "url": return_result["labelUrl"]}],

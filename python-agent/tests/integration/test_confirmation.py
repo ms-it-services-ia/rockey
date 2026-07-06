@@ -35,7 +35,7 @@ async def test_auto_approved_summary_contains_case_number_and_offers_more_help()
 
     assert "RET-abcd1234" in result["reply"]
     assert "approved" in result["reply"]
-    assert "anything else" in result["reply"]
+    assert "aider avec autre chose" in result["reply"]
 
 
 @pytest.mark.asyncio

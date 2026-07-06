@@ -61,6 +61,6 @@ public class TicketService {
         dossier.setAppliedRule(appliedRule);
         dossierRepository.save(dossier);
 
-        return new TicketResult(ticketId, "within 24 business hours");
+        return new TicketResult(ticketId, "sous 24 heures ouvrées");
     }
 }

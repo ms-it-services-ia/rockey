@@ -27,7 +27,7 @@ async def confirmation_node(state: dict) -> dict:
 
     if state.get("decision") == "refused":
         order_data = state.get("order_data") or {}
-        base_reply = state.get("reply", "This request could not be approved.")
+        base_reply = state.get("reply", "Cette demande n'a pas pu être approuvée.")
         try:
             refusal_record = await record_refusal(
                 order_id=state.get("order_id") or "unknown",
@@ -61,8 +61,8 @@ async def confirmation_node(state: dict) -> dict:
     action = state.get("action_result") or {}
     case_id = state.get("case_id") or "N/A"
     reply = (
-        f"Here's a summary of your request (case {case_id}): "
-        f"{action.get('summary', 'your request has been processed')}. "
-        "Is there anything else I can help you with?"
+        f"Voici un résumé de votre demande (dossier {case_id}) : "
+        f"{action.get('summary', 'votre demande a été traitée')}. "
+        "Puis-je encore vous aider avec autre chose ?"
     )
     return {**state, "current_state": "CONFIRMATION", "reply": reply}

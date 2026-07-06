@@ -32,7 +32,7 @@ public class ChatErrorHandler {
     // when that lookup itself can't run (constitution VI.1 always requires *some* normalized
     // message, even if the tenant config is unreachable).
     private static final String FALLBACK_GENERIC_ERROR_MESSAGE =
-            "Sorry, something went wrong on our end. Please try again in a moment.";
+            "Désolée, une erreur est survenue de notre côté. Merci de réessayer dans un instant.";
 
     private final TenantConfigRepository tenantConfigRepository;
 
