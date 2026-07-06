@@ -59,7 +59,7 @@
   function buildDom() {
     var launcher = document.createElement("button");
     launcher.id = "rockey-widget-launcher";
-    launcher.setAttribute("aria-label", "Open customer service chat");
+    launcher.setAttribute("aria-label", "Ouvrir le chat du service client");
     launcher.textContent = "💬";
 
     var panel = document.createElement("div");
@@ -67,8 +67,8 @@
     panel.innerHTML =
       '<div id="rockey-widget-messages"></div>' +
       '<div id="rockey-widget-input-row">' +
-      '<input id="rockey-widget-input" type="text" placeholder="Type a message..." />' +
-      '<button id="rockey-widget-send">Send</button>' +
+      '<input id="rockey-widget-input" type="text" placeholder="Écrivez un message..." />' +
+      '<button id="rockey-widget-send">Envoyer</button>' +
       "</div>";
 
     document.body.appendChild(panel);
@@ -118,7 +118,7 @@
       .catch(function () {
         appendMessage(
           messages,
-          "Sorry, something went wrong. Please try again or reach us by email.",
+          "Désolée, une erreur est survenue. Merci de réessayer ou de nous contacter par email.",
           "agent"
         );
       });
