@@ -9,12 +9,17 @@ import logging
 
 from agent.memory.history_store import record_complaint
 from agent.rag.rag_query import get_article_by_id
-from agent.tools.classify_reason import classify_complaint_reason
+from agent.tools.classify_reason import classify_complaint_reason, classify_verification_reply
 from config.circuit_breaker import TechnicalFailure, call_with_breaker
 
 logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATIONS = 2
+
+_VERIFICATION_ESCALATION_REPLY = (
+    "Je comprends, je fais intervenir un collègue pour investiguer ce qui s'est passé avec "
+    "la livraison et trouver la meilleure solution."
+)
 
 
 async def complaint_flow_node(state: dict) -> dict:
@@ -22,18 +27,59 @@ async def complaint_flow_node(state: dict) -> dict:
 
     # Follow-up to the non-delivery verification question below — the customer is reporting
     # back whether they found the package, not restating the complaint reason, so this must
-    # not be re-classified from scratch.
+    # not be re-classified from scratch. Return Policy §12 only wants an escalation once the
+    # customer has actually checked and it's still missing — "I haven't checked yet" is not
+    # the same answer, and must not be treated as if it were (previously this branch
+    # escalated unconditionally, regardless of what the reply actually said).
     if state.get("_non_delivery_checked"):
+        try:
+            verification = await classify_verification_reply(message)
+        except TechnicalFailure:
+            return {
+                **state,
+                "escalated": True,
+                "escalation_reason": "service_unavailable",
+                "current_state": "COMPLAINT_FLOW",
+                "reply": (
+                    "J'ai des difficultés à traiter votre demande en ce moment — je vous "
+                    "transfère à un collègue."
+                ),
+            }
+
+        if verification == "not_yet_checked":
+            reformulations = state.get("reformulation_count", 0) + 1
+            logger.warning(
+                "NON_DELIVERY_VERIFICATION_PENDING message=%r attempt=%d", message, reformulations
+            )
+            if reformulations <= MAX_CLARIFICATIONS:
+                return {
+                    **state,
+                    "reformulation_count": reformulations,
+                    "_complaint_needs_clarification": True,
+                    "current_state": "COMPLAINT_FLOW",
+                    "reply": (
+                        "Pas de souci, prenez le temps de vérifier auprès des personnes de "
+                        "votre foyer, de la réception de votre immeuble ou de vos voisins, "
+                        "et dites-moi ce qu'il en est."
+                    ),
+                }
+            # Still not checked after MAX_CLARIFICATIONS -> escalate anyway (Return Policy
+            # §12 always routes a non-delivery claim to human investigation eventually;
+            # asking indefinitely serves no one).
+            logger.warning(
+                "NON_DELIVERY_VERIFICATION_TIMEOUT message=%r after %d attempts", message, reformulations
+            )
+
+        # confirmed_not_found, or ambiguous (constitution V.3: never let an unclear
+        # verification silently drop a claim — a genuine SNAD claim always needs human
+        # investigation regardless, so ambiguous is safe to treat the same as confirmed).
         return {
             **state,
             "reason": "not_received",
             "escalated": True,
             "escalation_reason": "non_delivery_claim",
             "current_state": "COMPLAINT_FLOW",
-            "reply": (
-                "Je comprends, je fais intervenir un collègue pour investiguer ce qui "
-                "s'est passé avec la livraison et trouver la meilleure solution."
-            ),
+            "reply": _VERIFICATION_ESCALATION_REPLY,
         }
 
     try:

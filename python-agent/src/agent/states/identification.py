@@ -10,6 +10,7 @@ rest of this node's logic.
 
 import re
 
+from agent.states.qualification import append_context
 from agent.tools.check_order import OrderNotFound, check_order
 from config.circuit_breaker import TechnicalFailure
 
@@ -28,6 +29,11 @@ def _extract_identification(message: str) -> tuple[str | None, str | None]:
 async def identification_node(state: dict) -> dict:
     message = state.get("_latest_message", "")
     order_id, email = _extract_identification(message)
+    # The message that finally identifies the customer often also states their actual
+    # request ("CMD-2026-00001, marie@x.com, mon colis n'est jamais arrivé") — the regex
+    # extraction above only pulls out order_id/email, so the rest would otherwise be lost
+    # the same way a pre-identification message would be (see qualification.py).
+    context = append_context(state, message)
 
     # Edge case (T024b): customer tries to skip identification (message has neither an
     # order number nor an email) — hold the step without spending an attempt.
@@ -37,7 +43,7 @@ async def identification_node(state: dict) -> dict:
             "que de l'adresse email utilisée pour cette commande avant de pouvoir vous "
             "aider — vous trouverez le numéro de commande dans votre email de confirmation."
         )
-        return {**state, "current_state": "IDENTIFICATION", "reply": reply}
+        return {**state, "_qualification_context": context, "current_state": "IDENTIFICATION", "reply": reply}
 
     try:
         order_data = await check_order(order_id, email, state["tenant_id"])
@@ -49,7 +55,13 @@ async def identification_node(state: dict) -> dict:
                 "Je n'ai pas trouvé de commande correspondant à ce numéro et cet email — "
                 "pourriez-vous vérifier ces informations et réessayer ?"
             )
-            return {**state, "identification_attempts": attempts, "current_state": "IDENTIFICATION", "reply": reply}
+            return {
+                **state,
+                "identification_attempts": attempts,
+                "_qualification_context": context,
+                "current_state": "IDENTIFICATION",
+                "reply": reply,
+            }
 
         # 2 failed attempts -> escalate. Deliberately generic (constitution III.3 / T031):
         # this message never reveals whether the order belongs to a different retailer or
@@ -88,6 +100,7 @@ async def identification_node(state: dict) -> dict:
         "client_email": email,
         "order_id": order_id,
         "order_data": order_data,
+        "_qualification_context": context,
         "current_state": "IDENTIFICATION",
         "reply": reply,
     }

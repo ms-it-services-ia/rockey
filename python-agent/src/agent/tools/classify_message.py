@@ -19,7 +19,7 @@ from config.circuit_breaker import call_with_breaker
 from config.settings import settings
 
 Category = Literal[
-    "return_request", "non_delivery", "quality_complaint", "case_status_question", "other", "ambiguous"
+    "return_request", "non_delivery", "quality_complaint", "case_status_question", "closing", "other", "ambiguous"
 ]
 
 _CATEGORIES: tuple[Category, ...] = (
@@ -27,6 +27,7 @@ _CATEGORIES: tuple[Category, ...] = (
     "non_delivery",
     "quality_complaint",
     "case_status_question",
+    "closing",
     "other",
     "ambiguous",
 )
@@ -63,6 +64,9 @@ _CLASSIFY_TOOL = {
                     "or progress of a request they already made — not describing a new "
                     "issue (e.g. \"will I get refunded?\", \"has my case been reviewed?\", "
                     "\"what happens next?\"). "
+                    "closing: the customer is ending the conversation — thanking, saying "
+                    "goodbye, or otherwise indicating they have nothing further to ask (e.g. "
+                    "\"ok merci\", \"c'est tout\", \"au revoir\", \"nothing else, thanks\"). "
                     "other: unrelated to returns/complaints/delivery (pricing, promotions, "
                     "general questions, anything out of scope for after-sales support). "
                     "ambiguous: genuinely unclear which of the above applies even considering "

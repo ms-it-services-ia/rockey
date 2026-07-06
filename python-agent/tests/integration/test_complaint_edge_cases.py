@@ -101,11 +101,57 @@ async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_aut
     assert "vérifier" in first["reply"]
 
     second_state = {**first, "_latest_message": "I checked, no one has it, still missing."}
-    second = await complaint_flow_node(second_state)
+    with patch(
+        "agent.states.complaint_flow.classify_verification_reply",
+        new=AsyncMock(return_value="confirmed_not_found"),
+    ):
+        second = await complaint_flow_node(second_state)
 
     assert second["escalated"] is True
     assert second["escalation_reason"] == "non_delivery_claim"
     assert second["reason"] == "not_received"
+
+
+@pytest.mark.asyncio
+async def test_non_delivery_verification_not_yet_done_asks_again_instead_of_escalating():
+    """Regression test: a customer replying "I haven't checked yet" to the household/
+    neighbors verification question must not be treated as if they'd confirmed the package
+    is missing — the bot previously escalated unconditionally on any reply at all."""
+    state = _complaint_state(
+        _latest_message="not yet, I'll check tonight",
+        reason="not_received",
+        _non_delivery_checked=True,
+    )
+
+    with patch(
+        "agent.states.complaint_flow.classify_verification_reply",
+        new=AsyncMock(return_value="not_yet_checked"),
+    ):
+        result = await complaint_flow_node(state)
+
+    assert not result.get("escalated")
+    assert result["current_state"] == "COMPLAINT_FLOW"
+    assert result["_complaint_needs_clarification"] is True
+    assert "vérifier" in result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_non_delivery_verification_stalled_escalates_after_max_clarifications():
+    state = _complaint_state(
+        _latest_message="I still haven't had time to check",
+        reason="not_received",
+        _non_delivery_checked=True,
+        reformulation_count=2,
+    )
+
+    with patch(
+        "agent.states.complaint_flow.classify_verification_reply",
+        new=AsyncMock(return_value="not_yet_checked"),
+    ):
+        result = await complaint_flow_node(state)
+
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == "non_delivery_claim"
 
 
 @pytest.mark.asyncio

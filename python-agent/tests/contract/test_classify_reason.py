@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agent.tools.classify_reason import classify_complaint_reason, classify_return_reason
+from agent.tools.classify_reason import (
+    classify_complaint_reason,
+    classify_return_reason,
+    classify_verification_reply,
+)
 from config.circuit_breaker import TechnicalFailure
 
 
@@ -45,6 +49,20 @@ async def test_return_reason_happy_path_returns_the_classified_category():
     assert result == "wrong_size"
     call_kwargs = mock_client.messages.create.call_args.kwargs
     assert call_kwargs["tool_choice"] == {"type": "tool", "name": "classify_return_reason"}
+
+
+@pytest.mark.asyncio
+async def test_verification_reply_happy_path_returns_the_classified_category():
+    with patch("agent.tools.classify_reason._get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=_fake_tool_use_response("not_yet_checked"))
+        mock_get_client.return_value = mock_client
+
+        result = await classify_verification_reply("not yet, I'll check tonight")
+
+    assert result == "not_yet_checked"
+    call_kwargs = mock_client.messages.create.call_args.kwargs
+    assert call_kwargs["tool_choice"] == {"type": "tool", "name": "classify_verification_reply"}
 
 
 @pytest.mark.asyncio

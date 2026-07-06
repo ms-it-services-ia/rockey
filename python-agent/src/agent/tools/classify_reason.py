@@ -8,6 +8,12 @@ Constitution V.3 still holds: this only classifies the customer's stated reason 
 decides the eligibility/refund outcome, which stays 100% rule-based in Java's
 EligibilityService (which doesn't branch its own logic on this reason string at all; it's
 used for record-keeping and, for returns, fee-structure context).
+
+Also home to classify_verification_reply, a small binary-ish classifier for complaint_flow.py's
+non-delivery verification step (Return Policy §12: check with household/neighbors before
+treating it as a genuine claim) — a customer saying "I haven't checked yet" is not the same
+answer as "I checked and it's not there", and a fixed keyword check for this would have the
+exact same brittleness this whole module already exists to avoid.
 """
 
 from typing import Literal
@@ -21,6 +27,7 @@ ComplaintReason = Literal[
     "quality_defect", "damaged_on_delivery", "non_conformity", "wrong_item", "not_received", "other", "ambiguous"
 ]
 ReturnReason = Literal["wrong_size", "change_of_mind", "non_conforming", "not_received", "other", "ambiguous"]
+VerificationReply = Literal["confirmed_not_found", "not_yet_checked", "ambiguous"]
 
 _SYSTEM_PROMPT = (
     "You classify a single customer service message for a secondhand fashion marketplace. "
@@ -99,6 +106,32 @@ _RETURN_REASON_TOOL = {
     },
 }
 
+_VERIFICATION_REPLY_TOOL = {
+    "name": "classify_verification_reply",
+    "description": (
+        "Classifies a customer's reply after being asked to check with household members, "
+        "building reception, or neighbors for a package they say they never received."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "enum": ["confirmed_not_found", "not_yet_checked", "ambiguous"],
+                "description": (
+                    "confirmed_not_found: the customer says they checked (or already knew "
+                    "for certain) and the package genuinely isn't there. "
+                    "not_yet_checked: the customer hasn't completed the verification yet — "
+                    "says they haven't checked, will check later, or asks to be escalated "
+                    "without having checked. "
+                    "ambiguous: genuinely unclear which of the above applies."
+                ),
+            },
+        },
+        "required": ["category"],
+    },
+}
+
 _client: AsyncAnthropic | None = None
 
 
@@ -140,3 +173,9 @@ async def classify_return_reason(message: str) -> ReturnReason:
     """Raises TechnicalFailure (via call_with_breaker) if the LLM call fails after retries —
     the caller must escalate rather than silently guess (constitution VI.1)."""
     return await _classify(message, _RETURN_REASON_TOOL)
+
+
+async def classify_verification_reply(message: str) -> VerificationReply:
+    """Raises TechnicalFailure (via call_with_breaker) if the LLM call fails after retries —
+    the caller must escalate rather than silently guess (constitution VI.1)."""
+    return await _classify(message, _VERIFICATION_REPLY_TOOL)

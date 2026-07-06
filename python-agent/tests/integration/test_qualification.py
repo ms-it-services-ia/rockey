@@ -88,6 +88,38 @@ async def test_ambiguous_asks_a_clarifying_question_then_escalates_after_max_att
 
 
 @pytest.mark.asyncio
+async def test_buffered_pre_identification_context_is_classified_together_with_latest_message():
+    """Regression test: a customer who already explained their request before identification
+    succeeded (buffered into _qualification_context by greeting.py/identification.py) must
+    not have to repeat themselves — qualification_node classifies the full buffered context,
+    not just whatever (often much vaguer) message happens to arrive once identification is
+    done."""
+    mock_classify = _mock_classify("non_delivery")
+    with patch("agent.states.qualification.classify_message", new=mock_classify):
+        result = await qualification_node(
+            _state(
+                "je voudrai avoir un remboursement",
+                _qualification_context=["Bonjour, mon colis n'est jamais arrivé"],
+            )
+        )
+
+    combined = mock_classify.call_args.args[0]
+    assert "colis n'est jamais arrivé" in combined
+    assert "remboursement" in combined
+    assert result["intent"] == "complaint"
+    # Definite classification reached -> the buffer has served its purpose.
+    assert result["_qualification_context"] == []
+
+
+@pytest.mark.asyncio
+async def test_ambiguous_classification_keeps_accumulating_the_context_buffer():
+    with patch("agent.states.qualification.classify_message", new=_mock_classify("ambiguous")):
+        result = await qualification_node(_state("hmm", _qualification_context=["Bonjour"]))
+
+    assert result["_qualification_context"] == ["Bonjour", "hmm"]
+
+
+@pytest.mark.asyncio
 async def test_technical_failure_escalates_rather_than_guessing():
     with patch(
         "agent.states.qualification.classify_message",

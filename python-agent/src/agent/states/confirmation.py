@@ -18,32 +18,19 @@ here by reusing classify_message (research.md §4) on every post-confirmation me
 genuine status question gets an honest answer from the case's own state; anything else is
 treated as a new request and re-routed through qualification.route_by_category exactly as a
 fresh QUALIFICATION cycle would, keeping the customer already identified.
+
+Closing detection was originally a fixed keyword list ("non merci", "c'est tout", etc) — the
+same brittleness already fixed twice elsewhere this session: "ok merci" (a perfectly normal
+way to close a conversation) didn't match any keyword and fell through to classify_message,
+which correctly had no better category than "other", producing a jarring "that's outside
+what I handle" reply right after a case had just been resolved. Folded into classify_message
+itself as a "closing" category instead, so one LLM call classifies both possibilities.
 """
 
 from agent.states.qualification import route_by_category, route_intent
 from agent.tools.classify_message import classify_message
 from agent.tools.record_refusal import record_refusal
 from config.circuit_breaker import TechnicalFailure
-
-_CLOSING_KEYWORDS = (
-    "no thanks",
-    "no, thanks",
-    "nothing else",
-    "that's all",
-    "that's it",
-    "i'm good",
-    "non merci",
-    "non, merci",
-    "rien d'autre",
-    "c'est tout",
-    "ça sera tout",
-    "c'est bon",
-)
-
-
-def _is_closing_message(message: str) -> bool:
-    lowered = message.strip().lower()
-    return any(kw in lowered for kw in _CLOSING_KEYWORDS)
 
 
 def _case_status_reply(state: dict) -> str:
@@ -93,6 +80,7 @@ _RESET_FOR_NEW_REQUEST = {
     "ticket_id": None,
     "attachments": [],
     "reformulation_count": 0,
+    "_qualification_context": [],
     "_confirmation_shown": False,
     "_complaint_needs_clarification": False,
     "_return_needs_clarification": False,
@@ -107,13 +95,6 @@ async def confirmation_node(state: dict) -> dict:
     # new or unrelated request re-routed through the normal intent-classification pipeline.
     if state.get("_confirmation_shown"):
         message = state.get("_latest_message", "")
-        if _is_closing_message(message):
-            return {
-                **state,
-                "current_state": "CONFIRMATION",
-                "reply": "Avec plaisir ! N'hésitez pas à revenir vers nous si vous avez besoin d'autre chose.",
-                "_session_ended": True,
-            }
 
         try:
             category = await classify_message(message)
@@ -129,6 +110,14 @@ async def confirmation_node(state: dict) -> dict:
                 ),
             }
 
+        if category == "closing":
+            return {
+                **state,
+                "current_state": "CONFIRMATION",
+                "reply": "Avec plaisir ! N'hésitez pas à revenir vers nous si vous avez besoin d'autre chose.",
+                "_session_ended": True,
+            }
+
         if category == "case_status_question":
             return {**state, "current_state": "CONFIRMATION", "reply": _case_status_reply(state)}
 
@@ -140,6 +129,11 @@ async def confirmation_node(state: dict) -> dict:
         result = route_by_category({**state, **_RESET_FOR_NEW_REQUEST}, category)
         next_state = route_intent(result)
         result["current_state"] = next_state
+        if next_state == "QUALIFICATION":
+            # Ambiguous -> qualification_node's own accumulation buffer (see qualification.py)
+            # must start from this message, not an empty buffer, or it would be lost the same
+            # way a pre-identification message otherwise would be.
+            result["_qualification_context"] = [message]
         if next_state == "CONFIRMATION":
             # intent == "other": this result IS the reply the customer gets this turn, so
             # it's already "shown" — otherwise the next message would hit the stale

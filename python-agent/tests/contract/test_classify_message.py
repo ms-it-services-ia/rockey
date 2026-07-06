@@ -33,6 +33,18 @@ async def test_happy_path_returns_the_classified_category():
 
 
 @pytest.mark.asyncio
+async def test_classifies_closing_message():
+    with patch("agent.tools.classify_message._get_client") as mock_get_client:
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(return_value=_fake_tool_use_response("closing"))
+        mock_get_client.return_value = mock_client
+
+        result = await classify_message("ok merci")
+
+    assert result == "closing"
+
+
+@pytest.mark.asyncio
 async def test_edge_case_unrecognized_category_value_falls_back_to_ambiguous():
     # Defensive: the enum constraint should prevent this, but never trust an external
     # response blindly (constitution VI.1) — an unexpected value must not silently pass

@@ -110,7 +110,8 @@ async def test_closing_message_after_confirmation_ends_the_session_instead_of_re
         _latest_message="No thanks, that's all!",
     )
 
-    result = await confirmation_node(state)
+    with patch("agent.states.confirmation.classify_message", new=AsyncMock(return_value="closing")):
+        result = await confirmation_node(state)
 
     assert result["reply"] != state["reply"]
     assert "RET-abcd1234" not in result["reply"]

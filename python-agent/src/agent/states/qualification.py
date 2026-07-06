@@ -24,11 +24,22 @@ _CATEGORY_TO_INTENT = {
 }
 
 
+def append_context(state: dict, message: str) -> list[str]:
+    """Buffers a customer message that couldn't be classified yet (GREETING/IDENTIFICATION
+    run before any intent classification happens, constitution V.2) so qualification_node
+    can classify everything the customer actually said, not just whichever message happens
+    to arrive once identification finally succeeds."""
+    context = state.get("_qualification_context", [])
+    return [*context, message] if message else context
+
+
 async def qualification_node(state: dict) -> dict:
-    message = state.get("_latest_message", "")
+    latest = state.get("_latest_message", "")
+    context = append_context(state, latest)
+    combined_message = "\n".join(context) if context else latest
 
     try:
-        category = await classify_message(message)
+        category = await classify_message(combined_message)
     except TechnicalFailure:
         return {
             **state,
@@ -38,7 +49,12 @@ async def qualification_node(state: dict) -> dict:
             "reply": "J'ai des difficultés à traiter votre demande en ce moment — je vous transfère à un collègue.",
         }
 
-    return route_by_category(state, category)
+    result = route_by_category({**state, "_qualification_context": context}, category)
+    # A definite classification (intent set) means the buffered pre-identification content
+    # has served its purpose — clear it so it can't leak into a later, unrelated request in
+    # the same session. Still ambiguous -> keep accumulating for the next clarification round.
+    result["_qualification_context"] = [] if result.get("intent") else context
+    return result
 
 
 def route_by_category(state: dict, category: str) -> dict:
