@@ -14,10 +14,49 @@ MAX_CLARIFICATIONS = 2
 _MIN_DESCRIPTION_LENGTH = 15
 
 _REASON_KEYWORDS = {
-    "quality_defect": ("defective", "faulty", "broken", "doesn't work", "poor quality"),
-    "damaged_on_delivery": ("damaged", "arrived broken", "smashed", "torn"),
-    "non_conformity": ("not as described", "different from", "wrong material", "wrong color"),
-    "wrong_item": ("wrong item", "not what i ordered", "sent me the wrong"),
+    "quality_defect": (
+        "defective",
+        "faulty",
+        "broken",
+        "doesn't work",
+        "poor quality",
+        "défectueux",
+        "ne fonctionne pas",
+        "mauvaise qualité",
+    ),
+    "damaged_on_delivery": ("damaged", "arrived broken", "smashed", "torn", "endommagé", "abîmé", "cassé", "déchiré"),
+    "non_conformity": (
+        "not as described",
+        "different from",
+        "wrong material",
+        "wrong color",
+        "ne correspond pas",
+        "différent de",
+        "mauvaise couleur",
+    ),
+    "wrong_item": (
+        "wrong item",
+        "not what i ordered",
+        "sent me the wrong",
+        "mauvais article",
+        "pas ce que j'ai commandé",
+    ),
+    "not_received": (
+        "not received",
+        "never received",
+        "haven't received",
+        "hasn't arrived",
+        "never arrived",
+        "lost",
+        "missing",
+        "pas reçu",
+        "non reçu",
+        "jamais reçu",
+        "introuvable",
+        "perdu",
+        "n'est jamais arrivé",
+        "colis perdu",
+    ),
 }
 
 

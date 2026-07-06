@@ -36,3 +36,29 @@ async def test_classifies_out_of_scope_and_redirects_without_processing():
     assert result["intent"] == "other"
     assert not result.get("escalated")
     assert "customer service team" in result["reply"]
+
+
+@pytest.mark.asyncio
+async def test_classifies_return_intent_in_french():
+    result = await qualification_node(_state("Je voudrais faire un retour, j'ai changé d'avis."))
+    assert result["intent"] == "return"
+    assert not result.get("escalated")
+
+
+@pytest.mark.asyncio
+async def test_classifies_item_not_received_as_a_complaint_in_french():
+    # Found via live testing: a customer stating their item was never received/is lost, in
+    # French, was permanently unclassifiable — neither "return" nor "complaint" keywords
+    # covered "not received/lost" in either language, so the agent asked the same
+    # clarifying question twice before escalating, even though the intent was clear.
+    result = await qualification_node(
+        _state("Mon article n'est pas reçu, il est introuvable, je veux un remboursement.")
+    )
+    assert result["intent"] == "complaint"
+    assert not result.get("escalated")
+
+
+@pytest.mark.asyncio
+async def test_classifies_item_not_received_as_a_complaint_in_english():
+    result = await qualification_node(_state("I never received my package, it seems to be lost."))
+    assert result["intent"] == "complaint"

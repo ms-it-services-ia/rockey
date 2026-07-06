@@ -9,9 +9,70 @@ so swapping it for an LLM-based classifier later doesn't touch the rest of this 
 
 MAX_CLARIFICATIONS = 2
 
-_RETURN_KEYWORDS = ("return", "give back", "wrong size", "doesn't fit", "changed my mind", "exchange")
-_COMPLAINT_KEYWORDS = ("defective", "broken", "damaged", "complaint", "faulty", "wrong item", "not working")
-_OUT_OF_SCOPE_KEYWORDS = ("price", "discount", "promo", "restock", "when will you", "shipping cost")
+# Bilingual (EN/FR) — documented POC limitation (constitution II.1: Léa's persona is French,
+# but the keyword matcher was English-only until real customer testing surfaced messages
+# like "mon article n'est pas reçu, il est introuvable, je veux un remboursement" being
+# permanently unclassifiable, no matter how clearly the customer stated their request).
+_RETURN_KEYWORDS = (
+    "return",
+    "give back",
+    "wrong size",
+    "doesn't fit",
+    "changed my mind",
+    "exchange",
+    "retour",
+    "retourner",
+    "renvoyer",
+    "mauvaise taille",
+    "ne me va pas",
+    "j'ai changé d'avis",
+    "changé d'avis",
+    "échange",
+    "échanger",
+)
+_COMPLAINT_KEYWORDS = (
+    "defective",
+    "broken",
+    "damaged",
+    "complaint",
+    "faulty",
+    "wrong item",
+    "not working",
+    "not received",
+    "never received",
+    "haven't received",
+    "hasn't arrived",
+    "never arrived",
+    "lost",
+    "missing",
+    "défectueux",
+    "cassé",
+    "abîmé",
+    "endommagé",
+    "réclamation",
+    "ne fonctionne pas",
+    "mauvais article",
+    "pas reçu",
+    "non reçu",
+    "jamais reçu",
+    "introuvable",
+    "perdu",
+    "n'est jamais arrivé",
+    "colis perdu",
+)
+_OUT_OF_SCOPE_KEYWORDS = (
+    "price",
+    "discount",
+    "promo",
+    "restock",
+    "when will you",
+    "shipping cost",
+    "prix",
+    "réduction",
+    "promotion",
+    "réapprovisionnement",
+    "frais de livraison",
+)
 
 
 def _classify_intent(message: str) -> str | None:

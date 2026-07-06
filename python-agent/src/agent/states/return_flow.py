@@ -5,9 +5,32 @@ from agent.rag.rag_query import get_article_by_id
 from config.circuit_breaker import call_with_breaker
 
 _REASON_KEYWORDS = {
-    "wrong_size": ("too small", "too big", "wrong size", "doesn't fit"),
-    "change_of_mind": ("changed my mind", "don't want it", "no longer need"),
-    "non_conforming": ("not as described", "different from", "not what i ordered"),
+    "wrong_size": (
+        "too small",
+        "too big",
+        "wrong size",
+        "doesn't fit",
+        "trop petit",
+        "trop grand",
+        "mauvaise taille",
+        "ne me va pas",
+    ),
+    "change_of_mind": (
+        "changed my mind",
+        "don't want it",
+        "no longer need",
+        "changé d'avis",
+        "n'en veux plus",
+        "n'en ai plus besoin",
+    ),
+    "non_conforming": (
+        "not as described",
+        "different from",
+        "not what i ordered",
+        "ne correspond pas",
+        "différent de",
+        "pas ce que j'ai commandé",
+    ),
 }
 
 
