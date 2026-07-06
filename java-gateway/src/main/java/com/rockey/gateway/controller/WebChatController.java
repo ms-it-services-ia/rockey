@@ -1,5 +1,6 @@
 package com.rockey.gateway.controller;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.rockey.gateway.adapter.WebChatAdapter;
 import com.rockey.gateway.client.AgentClient;
 import com.rockey.gateway.dto.AgentResponse;
@@ -56,7 +57,9 @@ public class WebChatController {
         }
     }
 
-    public record ChatRequest(String sessionId, String message) {}
+    // Wire format is snake_case, matching contracts/channel-apis.md and the internal
+    // Gateway<->Python Agent format (constitution I.4b) — see AgentResponse/InternalMessage.
+    public record ChatRequest(@JsonProperty("session_id") String sessionId, String message) {}
 
     @PostMapping("/api/v1/chat")
     @ResponseBody

@@ -101,7 +101,7 @@
         "Content-Type": "application/json",
         "X-Tenant-ID": tenantId,
       },
-      body: JSON.stringify({ sessionId: sessionId, message: text }),
+      body: JSON.stringify({ session_id: sessionId, message: text }),
     })
       .then(function (response) {
         if (!response.ok) {
