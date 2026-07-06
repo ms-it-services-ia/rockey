@@ -27,6 +27,9 @@ async def test_eligible_return_generates_label_and_refund_automatically():
 
     with (
         patch(
+            "agent.states.return_flow.classify_return_reason", new=AsyncMock(return_value="wrong_size")
+        ),
+        patch(
             "agent.states.return_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-001", "returnable": True, "non_return_reason": None}),
         ),

@@ -30,7 +30,10 @@ async def test_vague_description_asks_for_clarification():
     """Edge case: vague defect description -> agent asks up to 2 clarifying questions."""
     state = _complaint_state(_latest_message="it's bad")
 
-    result = await complaint_flow_node(state)
+    with patch(
+        "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="ambiguous")
+    ):
+        result = await complaint_flow_node(state)
 
     assert result["current_state"] == "COMPLAINT_FLOW"
     assert result["_complaint_needs_clarification"] is True
@@ -47,7 +50,10 @@ async def test_still_unclear_after_max_clarifications_escalates():
     auto-approval (constitution V.3)."""
     state = _complaint_state(_latest_message="bad", reformulation_count=MAX_CLARIFICATIONS)
 
-    result = await complaint_flow_node(state)
+    with patch(
+        "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="ambiguous")
+    ):
+        result = await complaint_flow_node(state)
 
     assert result["escalated"] is True
     assert result["escalation_reason"] == "qualification_unclear"
@@ -61,7 +67,10 @@ async def test_unclassifiable_but_not_short_reason_still_triggers_clarification(
     silently treated as an understood, resolvable complaint."""
     state = _complaint_state(_latest_message="I already told you the reason for this")
 
-    result = await complaint_flow_node(state)
+    with patch(
+        "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="ambiguous")
+    ):
+        result = await complaint_flow_node(state)
 
     assert result["current_state"] == "COMPLAINT_FLOW"
     assert result["_complaint_needs_clarification"] is True
@@ -75,9 +84,14 @@ async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_aut
     VERIFICATION/DECISION/AUTO_ACTION (which would generate a nonsensical return label)."""
     state = _complaint_state(_latest_message="I never received my item, nothing in my mailbox.")
 
-    with patch(
-        "agent.states.complaint_flow.get_article_by_id",
-        new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
+    with (
+        patch(
+            "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="not_received")
+        ),
+        patch(
+            "agent.states.complaint_flow.get_article_by_id",
+            new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
+        ),
     ):
         first = await complaint_flow_node(state)
 
@@ -101,6 +115,9 @@ async def test_complaint_past_return_window_escalates_under_legal_warranty():
     state = _complaint_state(_latest_message="This coat turned out to be defective after all.")
 
     with (
+        patch(
+            "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="quality_defect")
+        ),
         patch(
             "agent.states.complaint_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),

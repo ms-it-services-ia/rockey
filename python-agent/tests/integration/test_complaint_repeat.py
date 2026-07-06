@@ -27,6 +27,9 @@ async def test_repeated_complaint_escalates_automatically_with_history():
 
     with (
         patch(
+            "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="quality_defect")
+        ),
+        patch(
             "agent.states.complaint_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-002", "returnable": True, "non_return_reason": None}),
         ),

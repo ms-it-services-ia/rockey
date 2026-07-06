@@ -122,6 +122,18 @@ def _route_after_complaint_flow(state: AgentState) -> str:
     return "VERIFICATION"
 
 
+def _route_after_return_flow(state: AgentState) -> str:
+    # Ambiguous return reason after MAX_CLARIFICATIONS -> escalate (mirrors
+    # _route_after_complaint_flow; return_flow_node sets escalated=True itself).
+    if state.get("escalated"):
+        return "ESCALATION"
+    # Ambiguous return reason, not yet at the clarification limit -> ask again and wait for
+    # the customer's answer.
+    if state.get("_return_needs_clarification"):
+        return "RETURN_FLOW"
+    return "VERIFICATION"
+
+
 def build_graph():
     graph = StateGraph(AgentState)
 
@@ -154,7 +166,11 @@ def build_graph():
             "QUALIFICATION": "QUALIFICATION",
         },
     )
-    graph.add_edge("RETURN_FLOW", "VERIFICATION")
+    graph.add_conditional_edges(
+        "RETURN_FLOW",
+        _route_after_return_flow,
+        {"VERIFICATION": "VERIFICATION", "ESCALATION": "ESCALATION", "RETURN_FLOW": "RETURN_FLOW"},
+    )
     graph.add_conditional_edges(
         "COMPLAINT_FLOW",
         _route_after_complaint_flow,
@@ -206,13 +222,13 @@ _NODES = {
 
 _UNCONDITIONAL_NEXT = {
     "GREETING": "IDENTIFICATION",
-    "RETURN_FLOW": "VERIFICATION",
     "ESCALATION": "CONFIRMATION",
 }
 
 _CONDITIONAL_NEXT = {
     "IDENTIFICATION": _route_after_identification,
     "QUALIFICATION": _route_after_qualification,
+    "RETURN_FLOW": _route_after_return_flow,
     "COMPLAINT_FLOW": _route_after_complaint_flow,
     "VERIFICATION": _route_after_verification,
     "DECISION": _route_after_decision,

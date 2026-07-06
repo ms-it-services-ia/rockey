@@ -30,6 +30,9 @@ def _return_state(channel: str) -> dict:
 async def test_same_return_request_yields_identical_decision_on_web_and_email():
     with (
         patch(
+            "agent.states.return_flow.classify_return_reason", new=AsyncMock(return_value="wrong_size")
+        ),
+        patch(
             "agent.states.return_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-001", "returnable": True, "non_return_reason": None}),
         ),

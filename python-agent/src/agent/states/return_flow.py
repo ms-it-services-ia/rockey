@@ -1,60 +1,73 @@
-"""RETURN_FLOW node (spec User Story 3, AC1): collects the return reason, then hands off to
-VERIFICATION (which runs immediately after, in the same turn — see graph.py's run_turn)."""
+"""RETURN_FLOW node (spec User Story 3, AC1): collects the return reason via an LLM call
+(research.md §4 applied one level deeper than intent classification — see classify_reason.py
+for why exact-phrase keyword matching kept getting outpaced by real customer wording), then
+hands off to VERIFICATION — unless the LLM signals genuine ambiguity, in which case it asks
+for clarification (up to 2 times, mirroring complaint_flow.py/qualification.py) rather than
+silently proceeding with a guessed reason.
+"""
 
-from agent.nlp_patterns import mentions_non_delivery
+import logging
+
 from agent.rag.rag_query import get_article_by_id
-from config.circuit_breaker import call_with_breaker
+from agent.tools.classify_reason import classify_return_reason
+from config.circuit_breaker import TechnicalFailure, call_with_breaker
 
-_REASON_KEYWORDS = {
-    "wrong_size": (
-        "too small",
-        "too big",
-        "wrong size",
-        "doesn't fit",
-        "trop petit",
-        "trop grand",
-        "mauvaise taille",
-        "ne me va pas",
-    ),
-    "change_of_mind": (
-        "changed my mind",
-        "don't want it",
-        "no longer need",
-        "changé d'avis",
-        "n'en veux plus",
-        "n'en ai plus besoin",
-    ),
-    "non_conforming": (
-        "not as described",
-        "different from",
-        "not what i ordered",
-        "ne correspond pas",
-        "différent de",
-        "pas ce que j'ai commandé",
-    ),
-    # "not_received" is handled separately by mentions_non_delivery() below. Kept as its own
-    # reason here too (defense-in-depth, Return Policy §12/§9): if a non-delivery message
-    # ever ends up classified as "return" intent rather than "complaint" (e.g. it didn't
-    # happen to use any of qualification.py's complaint keywords), this still tags it
-    # correctly so decision.py's guard can escalate instead of generating a nonsensical
-    # return label for an item the customer never received.
-}
+logger = logging.getLogger(__name__)
 
-
-def _classify_reason(message: str) -> str:
-    if mentions_non_delivery(message):
-        return "not_received"
-    lowered = message.lower()
-    for reason, keywords in _REASON_KEYWORDS.items():
-        if any(kw in lowered for kw in keywords):
-            return reason
-    return "other"
+MAX_CLARIFICATIONS = 2
 
 
 async def return_flow_node(state: dict) -> dict:
-    reason = _classify_reason(state.get("_latest_message", ""))
-    article_id = (state.get("order_data") or {}).get("articleId")
+    message = state.get("_latest_message", "")
 
+    try:
+        reason = await classify_return_reason(message)
+    except TechnicalFailure:
+        return {
+            **state,
+            "escalated": True,
+            "escalation_reason": "service_unavailable",
+            "current_state": "RETURN_FLOW",
+            "reply": (
+                "J'ai des difficultés à traiter votre demande en ce moment — je vous "
+                "transfère à un collègue."
+            ),
+        }
+
+    if reason == "ambiguous":
+        reformulations = state.get("reformulation_count", 0) + 1
+        logger.warning("RETURN_REASON_AMBIGUOUS message=%r reformulation=%d", message, reformulations)
+        if reformulations <= MAX_CLARIFICATIONS:
+            reply = (
+                "Pourriez-vous m'en dire un peu plus sur la raison de ce retour ? Par "
+                "exemple, la taille, la couleur, ou un changement d'avis ?"
+            )
+            return {
+                **state,
+                "reformulation_count": reformulations,
+                "_return_needs_clarification": True,
+                "current_state": "RETURN_FLOW",
+                "reply": reply,
+            }
+
+        # Still unclear after MAX_CLARIFICATIONS -> escalate, same policy as
+        # complaint_flow.py/qualification.py (constitution V.3 never lets an unclassified
+        # case slide through to auto-approval).
+        logger.error("RETURN_REASON_ESCALATED_AMBIGUOUS message=%r after %d clarifications", message, reformulations)
+        return {
+            **state,
+            "reformulation_count": reformulations,
+            "reason": "other",
+            "escalated": True,
+            "escalation_reason": "qualification_unclear",
+            "current_state": "RETURN_FLOW",
+            "reply": (
+                "Je ne parviens pas à cerner clairement la raison malgré nos échanges — "
+                "je fais intervenir un collègue qui pourra l'examiner plus en détail."
+            ),
+        }
+
+    article_id = (state.get("order_data") or {}).get("articleId")
     article_data = await call_with_breaker(
         "pgvector", lambda: get_article_by_id(article_id, state["tenant_id"])
     )
@@ -63,5 +76,6 @@ async def return_flow_node(state: dict) -> dict:
         **state,
         "reason": reason,
         "article_data": article_data,
+        "_return_needs_clarification": False,
         "current_state": "RETURN_FLOW",
     }
