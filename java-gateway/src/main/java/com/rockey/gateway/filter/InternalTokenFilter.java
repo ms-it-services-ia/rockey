@@ -11,8 +11,10 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 /**
  * Enforces the {@code X-Internal-Token} header (constitution IV.2) on every {@code
- * /internal/**} route. These routes are only ever called service-to-service (by the Python
- * Agent's MCP tools) and must never be reachable by an end customer.
+ * /internal/**} route, plus {@code /admin/**} (T082's manual RAG-sync trigger and any future
+ * operator-only action) — both classes of route are only ever called by a service or a
+ * trusted operator, never an end customer, so they share the same POC-stage token gate
+ * rather than introducing a second credential type this early.
  */
 @Component
 public class InternalTokenFilter extends OncePerRequestFilter {
@@ -29,7 +31,8 @@ public class InternalTokenFilter extends OncePerRequestFilter {
     protected void doFilterInternal(
             HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
             throws ServletException, IOException {
-        if (!request.getRequestURI().startsWith("/internal/")) {
+        String uri = request.getRequestURI();
+        if (!uri.startsWith("/internal/") && !uri.startsWith("/admin/")) {
             filterChain.doFilter(request, response);
             return;
         }

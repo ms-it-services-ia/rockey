@@ -13,9 +13,10 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
 
 /**
- * This filter is the only gate in front of every {@code /internal/**} route (constitution
- * IV.2) — Spring Security itself permits all requests (see SecurityConfig), so a gap here
- * would leave the entire internal service-to-service API open to the public internet.
+ * This filter is the only gate in front of every {@code /internal/**} and {@code /admin/**}
+ * route (constitution IV.2) — Spring Security itself permits all requests (see
+ * SecurityConfig), so a gap here would leave the entire internal service-to-service API
+ * (and the T082 admin RAG-sync trigger) open to the public internet.
  */
 class InternalTokenFilterTest {
 
@@ -63,6 +64,30 @@ class InternalTokenFilterTest {
 
         assertThat(response.getStatus()).isEqualTo(401);
         verifyNoInteractions(chain);
+    }
+
+    @Test
+    void edgeCase_rejectsAnAdminRouteWithNoToken() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/admin/rag/sync");
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(request, response, chain);
+
+        assertThat(response.getStatus()).isEqualTo(401);
+        verifyNoInteractions(chain);
+    }
+
+    @Test
+    void happyPath_allowsAnAdminRouteWithTheCorrectToken() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/admin/rag/sync");
+        request.addHeader("X-Internal-Token", VALID_TOKEN);
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain).doFilter(request, response);
     }
 
     @Test

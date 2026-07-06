@@ -43,6 +43,12 @@ public class TenantConfig {
     @Column(name = "drive_folder_id")
     private String driveFolderId;
 
+    @Column(name = "error_message_generic")
+    private String errorMessageGeneric;
+
+    @Column(name = "error_message_channel_unavailable")
+    private String errorMessageChannelUnavailable;
+
     protected TenantConfig() {}
 
     public String getTenantId() {
@@ -87,5 +93,13 @@ public class TenantConfig {
 
     public String getDriveFolderId() {
         return driveFolderId;
+    }
+
+    public String getErrorMessageGeneric() {
+        return errorMessageGeneric;
+    }
+
+    public String getErrorMessageChannelUnavailable() {
+        return errorMessageChannelUnavailable;
     }
 }

@@ -18,6 +18,7 @@ import java.time.Duration;
 import java.util.Properties;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
@@ -73,6 +74,10 @@ public class EmailController {
         props.put("mail.imaps.port", port);
         Session session = Session.getInstance(props);
 
+        // Constitution VI.1: every error logged for this poll cycle (and any single email
+        // within it) must carry tenant_id/session_id — MDC is thread-local, so this covers
+        // the whole call chain for free.
+        MDC.put("tenant_id", TENANT_ID);
         try (Store store = session.getStore("imaps")) {
             store.connect(host, tenantConfig.getChannelEmailAddress(), emailPassword);
             Folder inbox = store.getFolder("INBOX");
@@ -87,16 +92,23 @@ public class EmailController {
                     // Never let one malformed email take down the whole poll cycle
                     // (constitution VI.1 — every external call wrapped, no silent request loss).
                     log.error("Failed to process inbound email", e);
+                } finally {
+                    MDC.remove("session_id");
                 }
             }
             inbox.close(false);
         } catch (Exception e) {
             log.error("IMAP poll failed for tenant {}", TENANT_ID, e);
+        } finally {
+            MDC.remove("tenant_id");
         }
     }
 
     private void handleOneEmail(Message email) throws Exception {
         InternalMessage internal = emailAdapter.toInternal(TENANT_ID, email);
+        // The email's own Message-ID doubles as its session_id (see EmailAdapter) — set as
+        // soon as it's known so a failure reaching agentClient.process still logs it.
+        MDC.put("session_id", internal.sessionId());
         AgentResponse response = agentClient.process(internal);
         sendReply(email, response);
     }

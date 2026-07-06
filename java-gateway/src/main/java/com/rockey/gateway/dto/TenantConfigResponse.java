@@ -10,4 +10,6 @@ public record TenantConfigResponse(
         boolean channelEmailActive,
         boolean channelSlackActive,
         String channelSlackChannel,
-        String driveFolderId) {}
+        String driveFolderId,
+        String errorMessageGeneric,
+        String errorMessageChannelUnavailable) {}

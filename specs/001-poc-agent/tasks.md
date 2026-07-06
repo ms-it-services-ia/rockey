@@ -265,12 +265,12 @@ channel.
 
 ## Final Phase: Polish & Cross-Cutting Concerns
 
-- [ ] T082 [P] Implement `AdminController` with `POST /admin/rag/sync?tenant_id=vinted` in `java-gateway/src/main/java/com/rockey/gateway/controller/AdminController.java`
-- [ ] T083 [P] Add structured JSON error logging (`session_id`, `tenant_id`, `timestamp`) across Java and Python per constitution VI.1
-- [ ] T084 [P] Source normalized customer-facing error messages from the retailer's Drive config per constitution VI.4
+- [X] T082 [P] Implement `AdminController` with `POST /admin/rag/sync?tenant_id=vinted` in `java-gateway/src/main/java/com/rockey/gateway/controller/AdminController.java`
+- [X] T083 [P] Add structured JSON error logging (`session_id`, `tenant_id`, `timestamp`) across Java and Python per constitution VI.1
+- [X] T084 [P] Source normalized customer-facing error messages from the retailer's Drive config per constitution VI.4
 - [X] T085 Run quickstart.md's 5 POC validation scenarios end-to-end against `docker-compose`
-- [ ] T086 [P] Verify Java test coverage > 70% (constitution VII.1) and add tests to close any gaps
-- [ ] T087 [P] Confirm all 5 MCP tools in contracts/mcp-tools.md have a passing contract test
+- [X] T086 [P] Verify Java test coverage > 70% (constitution VII.1) and add tests to close any gaps
+- [X] T087 [P] Confirm all 5 MCP tools in contracts/mcp-tools.md have a passing contract test
 - [X] T088 Security pass: zero hardcoded secrets, `.env.example` complete, `X-Internal-Token` enforced on every `/internal/**` route (constitution IV.1/IV.2)
 - [X] T089 Verify no agent response ever contains "Rockey", "AI", "algorithm", or "automated system" across a full quickstart.md run (constitution V.1 / spec FR-013)
 - [X] T090 Replace `PolicyLoader`'s bundled `vinted-policy.yaml` with a live Drive-derived source (constitution I.7/V.3): sync the retailer's policy thresholds from their Drive docs into a queryable store on the RAG-sync schedule. `EligibilityService` must not change — it only ever calls `PolicyLoader.load(tenantId)` and consumes the `PolicyThresholds` record, so this is scoped to `PolicyLoader.java` (and `vinted-policy.yaml`'s replacement) alone. Introduced as a documented simplification during Setup/Foundational/US1-4 implementation (see `PolicyLoader.java`'s javadoc).
