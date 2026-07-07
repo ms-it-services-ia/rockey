@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent.graph import run_turn
+from agent.tools.interpret_turn import TurnInterpretation
 
 
 @pytest.mark.asyncio
@@ -87,12 +88,12 @@ async def test_customer_states_the_actual_request_before_identification_is_not_l
         state["_latest_message"] = "CMD-2026-00001, marie.dupont@email.com"
         state = await run_turn(state)
 
-    mock_classify = AsyncMock(return_value="non_delivery")
-    with patch("agent.states.qualification.classify_message", new=mock_classify):
+    mock_interpret = AsyncMock(return_value=TurnInterpretation(signal="on_topic", category="non_delivery"))
+    with patch("agent.states.qualification.interpret_turn", new=mock_interpret):
         state["_latest_message"] = "je voudrai avoir un remboursement"
         state = await run_turn(state)
 
-    combined = mock_classify.call_args.args[0]
+    combined = mock_interpret.call_args.args[0]
     assert "colis n'est jamais arrivé" in combined
     assert state["intent"] == "complaint"
     assert state["reason"] == "not_received"

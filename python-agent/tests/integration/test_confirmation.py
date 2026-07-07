@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent.states.confirmation import confirmation_node
+from agent.tools.interpret_turn import TurnInterpretation
+from config.circuit_breaker import TechnicalFailure
 
 
 def _base_state(**overrides) -> dict:
@@ -21,6 +23,10 @@ def _base_state(**overrides) -> dict:
     }
     state.update(overrides)
     return state
+
+
+def _mock_interpret(signal: str, category: str | None = None) -> AsyncMock:
+    return AsyncMock(return_value=TurnInterpretation(signal=signal, category=category))
 
 
 @pytest.mark.asyncio
@@ -84,6 +90,23 @@ async def test_out_of_scope_case_preserves_qualifications_redirect_reply():
 
 
 @pytest.mark.asyncio
+async def test_session_ended_upstream_is_a_pure_pass_through():
+    """Regression test: qualification.py/complaint_flow.py/return_flow.py can now end a
+    conversation directly (closing/resolved before any case exists) and route through
+    CONFIRMATION for state-machine consistency — this node must not recompute a "here's your
+    case summary" reply in that situation, since there's no case."""
+    state = _base_state(
+        _session_ended=True,
+        reply="Entendu, n'hésitez pas si vous avez besoin d'autre chose.",
+    )
+
+    result = await confirmation_node(state)
+
+    assert result["reply"] == state["reply"]
+    assert result["_confirmation_shown"] is True
+
+
+@pytest.mark.asyncio
 async def test_first_visit_marks_confirmation_as_shown():
     state = _base_state(
         decision="auto",
@@ -110,11 +133,28 @@ async def test_closing_message_after_confirmation_ends_the_session_instead_of_re
         _latest_message="No thanks, that's all!",
     )
 
-    with patch("agent.states.confirmation.classify_message", new=AsyncMock(return_value="closing")):
+    with patch("agent.states.confirmation.interpret_turn", new=_mock_interpret("closing")):
         result = await confirmation_node(state)
 
     assert result["reply"] != state["reply"]
     assert "RET-abcd1234" not in result["reply"]
+    assert result["_session_ended"] is True
+
+
+@pytest.mark.asyncio
+async def test_resolved_signal_after_confirmation_also_ends_the_session():
+    state = _base_state(
+        decision="auto",
+        case_id="RET-abcd1234",
+        action_result={"summary": "your return has been approved"},
+        _confirmation_shown=True,
+        reply="Here's a summary of your request...",
+        _latest_message="oh it's fine now, never mind",
+    )
+
+    with patch("agent.states.confirmation.interpret_turn", new=_mock_interpret("resolved")):
+        result = await confirmation_node(state)
+
     assert result["_session_ended"] is True
 
 
@@ -133,9 +173,7 @@ async def test_case_status_question_after_escalation_gives_honest_answer_not_sil
         _latest_message="donc c'est possible que je serai remboursé ?",
     )
 
-    with patch(
-        "agent.states.confirmation.classify_message", new=AsyncMock(return_value="case_status_question")
-    ):
+    with patch("agent.states.confirmation.interpret_turn", new=_mock_interpret("case_status_question")):
         result = await confirmation_node(state)
 
     assert result["current_state"] == "CONFIRMATION"
@@ -155,9 +193,7 @@ async def test_case_status_question_after_auto_approval_confirms_already_process
         _latest_message="donc c'est bien remboursé ?",
     )
 
-    with patch(
-        "agent.states.confirmation.classify_message", new=AsyncMock(return_value="case_status_question")
-    ):
+    with patch("agent.states.confirmation.interpret_turn", new=_mock_interpret("case_status_question")):
         result = await confirmation_node(state)
 
     assert result["current_state"] == "CONFIRMATION"
@@ -183,7 +219,8 @@ async def test_new_return_request_after_confirmation_resets_state_and_reenters_r
     )
 
     with patch(
-        "agent.states.confirmation.classify_message", new=AsyncMock(return_value="return_request")
+        "agent.states.confirmation.interpret_turn",
+        new=_mock_interpret("on_topic", "return_request"),
     ):
         result = await confirmation_node(state)
 
@@ -207,7 +244,7 @@ async def test_unrelated_question_after_confirmation_is_answered_and_marked_show
         _latest_message="c'est quoi le prix de mon article",
     )
 
-    with patch("agent.states.confirmation.classify_message", new=AsyncMock(return_value="other")):
+    with patch("agent.states.confirmation.interpret_turn", new=_mock_interpret("on_topic", "other")):
         result = await confirmation_node(state)
 
     assert result["intent"] == "other"
@@ -218,8 +255,6 @@ async def test_unrelated_question_after_confirmation_is_answered_and_marked_show
 
 @pytest.mark.asyncio
 async def test_technical_failure_classifying_post_confirmation_message_escalates():
-    from config.circuit_breaker import TechnicalFailure
-
     state = _base_state(
         decision="auto",
         case_id="RET-abcd1234",
@@ -229,7 +264,8 @@ async def test_technical_failure_classifying_post_confirmation_message_escalates
     )
 
     with patch(
-        "agent.states.confirmation.classify_message", side_effect=TechnicalFailure("llm", RuntimeError("boom"))
+        "agent.states.confirmation.interpret_turn",
+        side_effect=TechnicalFailure("llm", RuntimeError("boom")),
     ):
         result = await confirmation_node(state)
 

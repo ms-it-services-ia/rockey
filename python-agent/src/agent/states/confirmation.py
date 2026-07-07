@@ -14,23 +14,28 @@ Once shown, any further message was previously swallowed into a single static "I
 listening" reply no matter what it said — a case-status question ("will I get refunded?")
 and a wholly unrelated question (item price) both got the identical non-answer, and neither
 was ever actually processed again (spec FR-010 intends a clean close, not a dead end). Fixed
-here by reusing classify_message (research.md §4) on every post-confirmation message: a
-genuine status question gets an honest answer from the case's own state; anything else is
-treated as a new request and re-routed through qualification.route_by_category exactly as a
-fresh QUALIFICATION cycle would, keeping the customer already identified.
+by reusing interpret_turn (research.md §4) on every post-confirmation message: a genuine
+status question gets an honest answer from the case's own state; anything else is treated as
+a new request and re-routed through qualification.route_interpretation exactly as a fresh
+QUALIFICATION cycle would, keeping the customer already identified.
 
-Closing detection was originally a fixed keyword list ("non merci", "c'est tout", etc) — the
-same brittleness already fixed twice elsewhere this session: "ok merci" (a perfectly normal
-way to close a conversation) didn't match any keyword and fell through to classify_message,
-which correctly had no better category than "other", producing a jarring "that's outside
-what I handle" reply right after a case had just been resolved. Folded into classify_message
-itself as a "closing" category instead, so one LLM call classifies both possibilities.
+interpret_turn's universal "closing"/"case_status_question"/"resolved" signals (see
+tools/interpret_turn.py) are checked identically at every node — this node no longer needs
+its own keyword list or ad-hoc branch for any of them; only the "_session_ended" pass-through
+below is specific to this node, since it's the only one that can be *entered* mid-turn by an
+upstream node (qualification/complaint_flow/return_flow) that already decided the
+conversation is over and already composed the final reply.
 """
 
-from agent.states.qualification import route_by_category, route_intent
-from agent.tools.classify_message import classify_message
+from agent.states.qualification import INTENT_CATEGORIES, INTENT_CONTEXT, route_intent, route_interpretation
+from agent.tools.interpret_turn import interpret_turn
 from agent.tools.record_refusal import record_refusal
 from config.circuit_breaker import TechnicalFailure
+
+# A new/unrelated post-resolution request goes through the exact same categories/context as a
+# fresh QUALIFICATION cycle — see qualification.py.
+_POST_RESOLUTION_CONTEXT = INTENT_CONTEXT
+_POST_RESOLUTION_CATEGORIES = INTENT_CATEGORIES
 
 
 def _case_status_reply(state: dict) -> str:
@@ -61,9 +66,9 @@ def _case_status_reply(state: dict) -> str:
 
 
 # Fields tied to the case that was just closed — reset before re-routing a genuinely new or
-# unrelated post-confirmation request through qualification.route_by_category, so it starts
-# as cleanly as a fresh QUALIFICATION cycle would (constitution VI.1: no stale case_id/
-# attachments/decision leaking into an unrelated new request).
+# unrelated post-confirmation request through qualification.route_interpretation, so it
+# starts as cleanly as a fresh QUALIFICATION cycle would (constitution VI.1: no stale
+# case_id/attachments/decision leaking into an unrelated new request).
 _RESET_FOR_NEW_REQUEST = {
     "intent": None,
     "reason": None,
@@ -89,15 +94,22 @@ _RESET_FOR_NEW_REQUEST = {
 
 
 async def confirmation_node(state: dict) -> dict:
-    # Once CONFIRMATION has been reached and shown once, classify the new message instead of
-    # swallowing it into a static reply — a closing acknowledgment ends the session, a
+    if state.get("_session_ended"):
+        # An upstream node (qualification/complaint_flow/return_flow) already decided this
+        # conversation is over — a closing signal or the customer's issue resolving itself
+        # before any case existed — and already composed the final reply. This node must not
+        # recompute anything (there's no case to summarize).
+        return {**state, "current_state": "CONFIRMATION", "_confirmation_shown": True}
+
+    # Once CONFIRMATION has been reached and shown once, interpret the new message instead
+    # of swallowing it into a static reply — a closing acknowledgment ends the session, a
     # question about the existing case gets an honest status answer, and anything else is a
     # new or unrelated request re-routed through the normal intent-classification pipeline.
     if state.get("_confirmation_shown"):
         message = state.get("_latest_message", "")
 
         try:
-            category = await classify_message(message)
+            interpretation = await interpret_turn(message, _POST_RESOLUTION_CONTEXT, _POST_RESOLUTION_CATEGORIES)
         except TechnicalFailure:
             return {
                 **state,
@@ -110,7 +122,7 @@ async def confirmation_node(state: dict) -> dict:
                 ),
             }
 
-        if category == "closing":
+        if interpretation.signal in ("closing", "resolved"):
             return {
                 **state,
                 "current_state": "CONFIRMATION",
@@ -118,15 +130,15 @@ async def confirmation_node(state: dict) -> dict:
                 "_session_ended": True,
             }
 
-        if category == "case_status_question":
+        if interpretation.signal == "case_status_question":
             return {**state, "current_state": "CONFIRMATION", "reply": _case_status_reply(state)}
 
-        # Any other category — a new return/complaint, or something genuinely unrelated
-        # (category "other") — is not a follow-up on the closed case, so it must not ride on
-        # its resolved state (constitution V.3: never let a new request slide through
-        # unclassified). Reset and hand off to the exact same routing qualification_node
-        # uses, reusing the category already classified above instead of a second LLM call.
-        result = route_by_category({**state, **_RESET_FOR_NEW_REQUEST}, category)
+        # "on_topic" (a new return/complaint) or "ambiguous" — either way, this is not a
+        # follow-up on the closed case, so it must not ride on its resolved state
+        # (constitution V.3: never let a new request slide through unclassified). Reset and
+        # hand off to the exact same routing qualification_node uses, reusing the
+        # interpretation already computed above instead of a second LLM call.
+        result = route_interpretation({**state, **_RESET_FOR_NEW_REQUEST}, interpretation)
         next_state = route_intent(result)
         result["current_state"] = next_state
         if next_state == "QUALIFICATION":

@@ -6,6 +6,7 @@ import pytest
 
 from agent.graph import run_turn
 from agent.states.complaint_flow import MAX_CLARIFICATIONS, complaint_flow_node
+from agent.tools.interpret_turn import TurnInterpretation
 
 
 def _complaint_state(**overrides) -> dict:
@@ -25,14 +26,16 @@ def _complaint_state(**overrides) -> dict:
     return state
 
 
+def _mock_interpret(signal: str, category: str | None = None) -> AsyncMock:
+    return AsyncMock(return_value=TurnInterpretation(signal=signal, category=category))
+
+
 @pytest.mark.asyncio
 async def test_vague_description_asks_for_clarification():
     """Edge case: vague defect description -> agent asks up to 2 clarifying questions."""
     state = _complaint_state(_latest_message="it's bad")
 
-    with patch(
-        "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="ambiguous")
-    ):
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("ambiguous")):
         result = await complaint_flow_node(state)
 
     assert result["current_state"] == "COMPLAINT_FLOW"
@@ -50,9 +53,7 @@ async def test_still_unclear_after_max_clarifications_escalates():
     auto-approval (constitution V.3)."""
     state = _complaint_state(_latest_message="bad", reformulation_count=MAX_CLARIFICATIONS)
 
-    with patch(
-        "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="ambiguous")
-    ):
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("ambiguous")):
         result = await complaint_flow_node(state)
 
     assert result["escalated"] is True
@@ -67,9 +68,31 @@ async def test_unclassifiable_but_not_short_reason_still_triggers_clarification(
     silently treated as an understood, resolvable complaint."""
     state = _complaint_state(_latest_message="I already told you the reason for this")
 
-    with patch(
-        "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="ambiguous")
-    ):
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("ambiguous")):
+        result = await complaint_flow_node(state)
+
+    assert result["current_state"] == "COMPLAINT_FLOW"
+    assert result["_complaint_needs_clarification"] is True
+    assert not result.get("escalated")
+
+
+@pytest.mark.asyncio
+async def test_closing_signal_during_reason_classification_ends_session_gracefully():
+    state = _complaint_state(_latest_message="actually, never mind, forget it")
+
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("closing")):
+        result = await complaint_flow_node(state)
+
+    assert result["current_state"] == "CONFIRMATION"
+    assert result["_session_ended"] is True
+    assert not result.get("escalated")
+
+
+@pytest.mark.asyncio
+async def test_case_status_question_during_reason_classification_is_answered_honestly():
+    state = _complaint_state(_latest_message="so is this going to be refunded?")
+
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("case_status_question")):
         result = await complaint_flow_node(state)
 
     assert result["current_state"] == "COMPLAINT_FLOW"
@@ -85,9 +108,7 @@ async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_aut
     state = _complaint_state(_latest_message="I never received my item, nothing in my mailbox.")
 
     with (
-        patch(
-            "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="not_received")
-        ),
+        patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("on_topic", "not_received")),
         patch(
             "agent.states.complaint_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
@@ -102,8 +123,8 @@ async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_aut
 
     second_state = {**first, "_latest_message": "I checked, no one has it, still missing."}
     with patch(
-        "agent.states.complaint_flow.classify_verification_reply",
-        new=AsyncMock(return_value="confirmed_not_found"),
+        "agent.states.complaint_flow.interpret_turn",
+        new=_mock_interpret("on_topic", "confirmed_not_found"),
     ):
         second = await complaint_flow_node(second_state)
 
@@ -124,8 +145,8 @@ async def test_non_delivery_verification_not_yet_done_asks_again_instead_of_esca
     )
 
     with patch(
-        "agent.states.complaint_flow.classify_verification_reply",
-        new=AsyncMock(return_value="not_yet_checked"),
+        "agent.states.complaint_flow.interpret_turn",
+        new=_mock_interpret("on_topic", "not_yet_checked"),
     ):
         result = await complaint_flow_node(state)
 
@@ -145,13 +166,51 @@ async def test_non_delivery_verification_stalled_escalates_after_max_clarificati
     )
 
     with patch(
-        "agent.states.complaint_flow.classify_verification_reply",
-        new=AsyncMock(return_value="not_yet_checked"),
+        "agent.states.complaint_flow.interpret_turn",
+        new=_mock_interpret("on_topic", "not_yet_checked"),
     ):
         result = await complaint_flow_node(state)
 
     assert result["escalated"] is True
     assert result["escalation_reason"] == "non_delivery_claim"
+
+
+@pytest.mark.asyncio
+async def test_customer_found_the_package_during_verification_is_not_escalated():
+    """Regression test: this is the exact bug that motivated consolidating classification
+    into interpret_turn — classify_verification_reply's fixed enum
+    (confirmed_not_found | not_yet_checked | ambiguous) had no room for "I found it", so it
+    got folded into ambiguous and escalated anyway. The universal "resolved" signal fixes
+    this at every node, not just this one."""
+    state = _complaint_state(
+        _latest_message="Oh actually I found it, it was at my neighbor's, sorry for the trouble!",
+        reason="not_received",
+        _non_delivery_checked=True,
+    )
+
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("resolved")):
+        result = await complaint_flow_node(state)
+
+    assert not result.get("escalated")
+    assert result["current_state"] == "CONFIRMATION"
+    assert result["_session_ended"] is True
+    assert result["reason"] is None
+
+
+@pytest.mark.asyncio
+async def test_case_status_question_during_verification_is_answered_and_loops_back():
+    state = _complaint_state(
+        _latest_message="donc c'est possible que je serai remboursé ?",
+        reason="not_received",
+        _non_delivery_checked=True,
+    )
+
+    with patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("case_status_question")):
+        result = await complaint_flow_node(state)
+
+    assert not result.get("escalated")
+    assert result["current_state"] == "COMPLAINT_FLOW"
+    assert result["_complaint_needs_clarification"] is True
 
 
 @pytest.mark.asyncio
@@ -161,9 +220,7 @@ async def test_complaint_past_return_window_escalates_under_legal_warranty():
     state = _complaint_state(_latest_message="This coat turned out to be defective after all.")
 
     with (
-        patch(
-            "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="quality_defect")
-        ),
+        patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("on_topic", "quality_defect")),
         patch(
             "agent.states.complaint_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),

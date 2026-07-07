@@ -1,27 +1,45 @@
-"""RETURN_FLOW node (spec User Story 3, AC1): collects the return reason via an LLM call
-(research.md §4 applied one level deeper than intent classification — see classify_reason.py
-for why exact-phrase keyword matching kept getting outpaced by real customer wording), then
-hands off to VERIFICATION — unless the LLM signals genuine ambiguity, in which case it asks
-for clarification (up to 2 times, mirroring complaint_flow.py/qualification.py) rather than
-silently proceeding with a guessed reason.
+"""RETURN_FLOW node (spec User Story 3, AC1): collects the return reason via interpret_turn
+(research.md §4 applied one level deeper than intent classification — see
+tools/interpret_turn.py for why a per-node hand-rolled enum kept missing real-world outcomes),
+then hands off to VERIFICATION — unless the LLM signals genuine ambiguity, in which case it
+asks for clarification (up to 2 times, mirroring complaint_flow.py/qualification.py) rather
+than silently proceeding with a guessed reason.
 """
 
 import logging
 
 from agent.rag.rag_query import get_article_by_id
-from agent.tools.classify_reason import classify_return_reason
+from agent.tools.interpret_turn import TurnCategory, interpret_turn
 from config.circuit_breaker import TechnicalFailure, call_with_breaker
 
 logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATIONS = 2
 
+_REASON_CONTEXT = "The customer already indicated they want to return an item they have in hand; classify why."
+
+_REASON_CATEGORIES = [
+    TurnCategory("wrong_size", "the item doesn't fit — too small, too big, wrong size"),
+    TurnCategory(
+        "change_of_mind",
+        "the customer simply no longer wants the item, changed their mind, or has a "
+        "different preference — unrelated to any defect",
+    ),
+    TurnCategory(
+        "non_conforming",
+        "the item doesn't match its listing (wrong material, wrong color) but the customer "
+        "has it in hand and isn't describing damage or a missing item",
+    ),
+    TurnCategory("not_received", "the customer never received the item, it's lost, missing, or untraceable"),
+    TurnCategory("other", "a genuine, understood return reason that just doesn't fit any of the above categories"),
+]
+
 
 async def return_flow_node(state: dict) -> dict:
     message = state.get("_latest_message", "")
 
     try:
-        reason = await classify_return_reason(message)
+        interpretation = await interpret_turn(message, _REASON_CONTEXT, _REASON_CATEGORIES)
     except TechnicalFailure:
         return {
             **state,
@@ -33,6 +51,29 @@ async def return_flow_node(state: dict) -> dict:
                 "transfère à un collègue."
             ),
         }
+
+    if interpretation.signal in ("closing", "resolved"):
+        # Nothing has been recorded yet — the customer is withdrawing the return before
+        # we've done anything technical with it; end warmly rather than forcing a category.
+        return {
+            **state,
+            "current_state": "CONFIRMATION",
+            "reply": "Entendu, n'hésitez pas si vous avez besoin d'autre chose.",
+            "_session_ended": True,
+        }
+
+    if interpretation.signal == "case_status_question":
+        return {
+            **state,
+            "current_state": "RETURN_FLOW",
+            "_return_needs_clarification": True,
+            "reply": (
+                "Je n'ai pas encore de dossier en cours — dites-moi la raison de ce retour "
+                "et je m'en occupe."
+            ),
+        }
+
+    reason = interpretation.category if interpretation.signal == "on_topic" else "ambiguous"
 
     if reason == "ambiguous":
         reformulations = state.get("reformulation_count", 0) + 1

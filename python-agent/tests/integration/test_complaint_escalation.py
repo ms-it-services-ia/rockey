@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent.graph import run_turn
+from agent.tools.interpret_turn import TurnInterpretation
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,8 @@ async def test_defective_item_complaint_above_threshold_escalates_with_summary()
 
     with (
         patch(
-            "agent.states.complaint_flow.classify_complaint_reason", new=AsyncMock(return_value="quality_defect")
+            "agent.states.complaint_flow.interpret_turn",
+            new=AsyncMock(return_value=TurnInterpretation(signal="on_topic", category="quality_defect")),
         ),
         patch(
             "agent.states.complaint_flow.get_article_by_id",

@@ -1,4 +1,4 @@
-"""Edge-case tests for QUALIFICATION (spec User Story 2 edge cases). classify_message is
+"""Edge-case tests for QUALIFICATION (spec User Story 2 edge cases). interpret_turn is
 mocked throughout (constitution VII.2: never the real API in tests)."""
 
 from unittest.mock import AsyncMock, patch
@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent.states.qualification import MAX_CLARIFICATIONS, qualification_node
+from agent.tools.interpret_turn import TurnInterpretation
 
 
 def _state(message: str, **overrides) -> dict:
@@ -25,7 +26,10 @@ async def test_mixed_return_and_complaint_asks_for_clarification():
     """Edge case: customer mixes a return and a complaint in one message -> the LLM itself
     signals genuine ambiguity (rather than both sets of keywords happening to match), and
     the agent asks for clarification, handling one case at a time (not both at once)."""
-    with patch("agent.states.qualification.classify_message", new=AsyncMock(return_value="ambiguous")):
+    with patch(
+        "agent.states.qualification.interpret_turn",
+        new=AsyncMock(return_value=TurnInterpretation(signal="ambiguous")),
+    ):
         result = await qualification_node(
             _state("I want to return this AND the other item I got was also damaged.")
         )
@@ -39,7 +43,10 @@ async def test_mixed_return_and_complaint_asks_for_clarification():
 async def test_aggressive_customer_tone_still_handled_calmly():
     """Edge case: aggressive/impatient customer -> agent stays calm and empathetic rather
     than erroring or escalating immediately just because of tone."""
-    with patch("agent.states.qualification.classify_message", new=AsyncMock(return_value="quality_complaint")):
+    with patch(
+        "agent.states.qualification.interpret_turn",
+        new=AsyncMock(return_value=TurnInterpretation(signal="on_topic", category="quality_complaint")),
+    ):
         result = await qualification_node(
             _state("This is RIDICULOUS, I want my money back for this broken junk NOW!!!")
         )
@@ -52,7 +59,10 @@ async def test_aggressive_customer_tone_still_handled_calmly():
 
 @pytest.mark.asyncio
 async def test_still_unclear_after_max_clarifications_escalates():
-    with patch("agent.states.qualification.classify_message", new=AsyncMock(return_value="ambiguous")):
+    with patch(
+        "agent.states.qualification.interpret_turn",
+        new=AsyncMock(return_value=TurnInterpretation(signal="ambiguous")),
+    ):
         result = await qualification_node(_state("hmm not sure", reformulation_count=MAX_CLARIFICATIONS))
 
     assert result["escalated"] is True

@@ -107,6 +107,11 @@ def _route_after_complaint_flow(state: AgentState) -> str:
     # complaint_flow_node sets escalated=True itself when history_store reports a repeat.
     if state.get("escalated"):
         return "ESCALATION"
+    # interpret_turn's universal "closing"/"resolved" signal (e.g. the customer found the
+    # missing package, or withdrew the complaint before anything was recorded) -> the node
+    # already composed the final reply and set _session_ended itself; nothing to verify.
+    if state.get("_session_ended"):
+        return "CONFIRMATION"
     # Vague description -> ask a clarifying question and wait for the customer's answer
     # (spec US5 edge case, up to 2 times, mirroring qualification.py's clarification loop).
     if state.get("_complaint_needs_clarification"):
@@ -119,6 +124,9 @@ def _route_after_return_flow(state: AgentState) -> str:
     # _route_after_complaint_flow; return_flow_node sets escalated=True itself).
     if state.get("escalated"):
         return "ESCALATION"
+    # See _route_after_complaint_flow — same universal "closing"/"resolved" short-circuit.
+    if state.get("_session_ended"):
+        return "CONFIRMATION"
     # Ambiguous return reason, not yet at the clarification limit -> ask again and wait for
     # the customer's answer.
     if state.get("_return_needs_clarification"):

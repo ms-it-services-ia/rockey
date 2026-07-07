@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from agent.graph import run_turn
+from agent.tools.interpret_turn import TurnInterpretation
 
 
 @pytest.mark.asyncio
@@ -27,7 +28,8 @@ async def test_eligible_return_generates_label_and_refund_automatically():
 
     with (
         patch(
-            "agent.states.return_flow.classify_return_reason", new=AsyncMock(return_value="wrong_size")
+            "agent.states.return_flow.interpret_turn",
+            new=AsyncMock(return_value=TurnInterpretation(signal="on_topic", category="wrong_size")),
         ),
         patch(
             "agent.states.return_flow.get_article_by_id",

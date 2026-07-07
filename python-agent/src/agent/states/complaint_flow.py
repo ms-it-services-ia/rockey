@@ -1,25 +1,66 @@
-"""COMPLAINT_FLOW node (spec User Story 5, AC1-2): collects the complaint reason via an LLM
-call (research.md §4 applied one level deeper than intent classification — see
-classify_reason.py for why exact-phrase keyword matching kept getting outpaced by real
-customer wording), detects repeated complaints on the same item, and asks for clarification
-only when the LLM itself signals genuine ambiguity.
+"""COMPLAINT_FLOW node (spec User Story 5, AC1-2): collects the complaint reason via
+interpret_turn (research.md §4, one level deeper than intent classification — see
+tools/interpret_turn.py for why a per-node hand-rolled enum kept missing real-world outcomes
+nobody thought to enumerate), detects repeated complaints on the same item, and asks for
+clarification only when the LLM itself signals genuine ambiguity.
 """
 
 import logging
 
 from agent.memory.history_store import record_complaint
 from agent.rag.rag_query import get_article_by_id
-from agent.tools.classify_reason import classify_complaint_reason, classify_verification_reply
+from agent.tools.interpret_turn import TurnCategory, interpret_turn
 from config.circuit_breaker import TechnicalFailure, call_with_breaker
 
 logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATIONS = 2
 
+_REASON_CONTEXT = (
+    "The customer already indicated they have a quality complaint about an item they "
+    "received; classify why."
+)
+
+_REASON_CATEGORIES = [
+    TurnCategory(
+        "quality_defect",
+        "the item is defective, faulty, broken, or doesn't work, for reasons other than "
+        "shipping damage",
+    ),
+    TurnCategory(
+        "damaged_on_delivery",
+        "the item arrived visibly damaged or broken, consistent with shipping/transit damage",
+    ),
+    TurnCategory(
+        "non_conformity",
+        "the item doesn't match its listing — wrong material, wrong color, or otherwise "
+        "different from what was described — but the customer has it in hand",
+    ),
+    TurnCategory("wrong_item", "an entirely different item than what was ordered was sent"),
+    TurnCategory(
+        "not_received",
+        "the customer never received the item, it's lost, missing, or untraceable — no "
+        "physical item in hand",
+    ),
+    TurnCategory("other", "a genuine, understood quality issue that just doesn't fit any of the above categories"),
+]
+
+_VERIFICATION_CONTEXT = (
+    "The customer was asked to check with household members, building reception, or "
+    "neighbors for a package they say never arrived, and is now replying."
+)
+
+_VERIFICATION_CATEGORIES = [
+    TurnCategory("confirmed_not_found", "checked (or already knew for certain) and the package genuinely isn't there"),
+    TurnCategory("not_yet_checked", "hasn't completed the verification yet — hasn't checked, will check later"),
+]
+
 _VERIFICATION_ESCALATION_REPLY = (
     "Je comprends, je fais intervenir un collègue pour investiguer ce qui s'est passé avec "
     "la livraison et trouver la meilleure solution."
 )
+
+_NO_LONGER_AN_ISSUE_REPLY = "Je suis ravie de l'apprendre ! N'hésitez pas si vous avez besoin d'autre chose."
 
 
 async def complaint_flow_node(state: dict) -> dict:
@@ -27,13 +68,10 @@ async def complaint_flow_node(state: dict) -> dict:
 
     # Follow-up to the non-delivery verification question below — the customer is reporting
     # back whether they found the package, not restating the complaint reason, so this must
-    # not be re-classified from scratch. Return Policy §12 only wants an escalation once the
-    # customer has actually checked and it's still missing — "I haven't checked yet" is not
-    # the same answer, and must not be treated as if it were (previously this branch
-    # escalated unconditionally, regardless of what the reply actually said).
+    # not be re-classified from scratch.
     if state.get("_non_delivery_checked"):
         try:
-            verification = await classify_verification_reply(message)
+            interpretation = await interpret_turn(message, _VERIFICATION_CONTEXT, _VERIFICATION_CATEGORIES)
         except TechnicalFailure:
             return {
                 **state,
@@ -46,11 +84,37 @@ async def complaint_flow_node(state: dict) -> dict:
                 ),
             }
 
-        if verification == "not_yet_checked":
+        if interpretation.signal in ("resolved", "closing"):
+            # The customer found the package (or no longer needs help) — there's no claim to
+            # escalate; end warmly rather than treating this as if they'd confirmed it was
+            # still missing (the exact bug this rewrite exists to fix).
+            return {
+                **state,
+                "reason": None,
+                "_non_delivery_checked": False,
+                "current_state": "CONFIRMATION",
+                "reply": _NO_LONGER_AN_ISSUE_REPLY,
+                "_session_ended": True,
+            }
+
+        if interpretation.signal == "case_status_question":
+            return {
+                **state,
+                "current_state": "COMPLAINT_FLOW",
+                "_complaint_needs_clarification": True,
+                "reply": (
+                    "Nous n'avons pas encore transmis votre dossier — je voulais d'abord "
+                    "vérifier avec vous si le colis avait pu être réceptionné par quelqu'un "
+                    "d'autre. Avez-vous pu vérifier ?"
+                ),
+            }
+
+        # Return Policy §12 only wants an escalation once the customer has actually checked
+        # and it's still missing — "I haven't checked yet" is not the same answer, and must
+        # not be treated as if it were.
+        if interpretation.signal == "on_topic" and interpretation.category == "not_yet_checked":
             reformulations = state.get("reformulation_count", 0) + 1
-            logger.warning(
-                "NON_DELIVERY_VERIFICATION_PENDING message=%r attempt=%d", message, reformulations
-            )
+            logger.warning("NON_DELIVERY_VERIFICATION_PENDING message=%r attempt=%d", message, reformulations)
             if reformulations <= MAX_CLARIFICATIONS:
                 return {
                     **state,
@@ -66,9 +130,7 @@ async def complaint_flow_node(state: dict) -> dict:
             # Still not checked after MAX_CLARIFICATIONS -> escalate anyway (Return Policy
             # §12 always routes a non-delivery claim to human investigation eventually;
             # asking indefinitely serves no one).
-            logger.warning(
-                "NON_DELIVERY_VERIFICATION_TIMEOUT message=%r after %d attempts", message, reformulations
-            )
+            logger.warning("NON_DELIVERY_VERIFICATION_TIMEOUT message=%r after %d attempts", message, reformulations)
 
         # confirmed_not_found, or ambiguous (constitution V.3: never let an unclear
         # verification silently drop a claim — a genuine SNAD claim always needs human
@@ -83,7 +145,7 @@ async def complaint_flow_node(state: dict) -> dict:
         }
 
     try:
-        reason = await classify_complaint_reason(message)
+        interpretation = await interpret_turn(message, _REASON_CONTEXT, _REASON_CATEGORIES)
     except TechnicalFailure:
         return {
             **state,
@@ -95,6 +157,29 @@ async def complaint_flow_node(state: dict) -> dict:
                 "transfère à un collègue."
             ),
         }
+
+    if interpretation.signal in ("closing", "resolved"):
+        # Nothing has been recorded yet at this point — the customer is withdrawing the
+        # complaint before we've done anything technical with it; end warmly.
+        return {
+            **state,
+            "current_state": "CONFIRMATION",
+            "reply": _NO_LONGER_AN_ISSUE_REPLY,
+            "_session_ended": True,
+        }
+
+    if interpretation.signal == "case_status_question":
+        return {
+            **state,
+            "current_state": "COMPLAINT_FLOW",
+            "_complaint_needs_clarification": True,
+            "reply": (
+                "Je n'ai pas encore de dossier en cours — dites-moi ce qui s'est passé avec "
+                "l'article et je regarde ça avec vous."
+            ),
+        }
+
+    reason = interpretation.category if interpretation.signal == "on_topic" else "ambiguous"
 
     # Genuinely undeterminable -> ask up to 2 clarifying questions (Complaint Policy §4),
     # then escalate. The LLM signaling ambiguity replaces the old length-based heuristic and

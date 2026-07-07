@@ -1,21 +1,49 @@
 """QUALIFICATION node (spec User Story 2, FR-003/FR-004). Classifies intent as a return
-request, a non-delivery claim, a quality complaint, or out-of-scope, via an LLM call
+request, a non-delivery claim, a quality complaint, or out-of-scope, via interpret_turn
 (research.md §4) — asking at most 2 clarifying questions when the LLM itself signals genuine
 ambiguity, never by matching exact phrases.
 
-Constitution V.3 still holds: classify_message only classifies *what the customer is asking
+Constitution V.3 still holds: interpret_turn only classifies *what the customer is asking
 for* — it never decides an eligibility/refund outcome, which stays 100% rule-based in Java's
 EligibilityService.
 """
 
 import logging
 
-from agent.tools.classify_message import classify_message
+from agent.tools.interpret_turn import TurnCategory, TurnInterpretation, interpret_turn
 from config.circuit_breaker import TechnicalFailure
 
 logger = logging.getLogger(__name__)
 
 MAX_CLARIFICATIONS = 2
+
+INTENT_CONTEXT = (
+    "The customer is contacting after-sales support and hasn't yet stated a specific reason "
+    "for a return or complaint beyond what's given here."
+)
+
+INTENT_CATEGORIES = [
+    TurnCategory(
+        "return_request",
+        "wants to send back an item they have in hand, for a change-of-mind reason (wrong "
+        "size, no longer wanted, wrong color preference, etc)",
+    ),
+    TurnCategory(
+        "non_delivery",
+        "says they never received the item, it's lost, missing, or untraceable — no "
+        "physical item in their possession to ship back",
+    ),
+    TurnCategory(
+        "quality_complaint",
+        "has the item but it's damaged, defective, not as described, or the wrong item was "
+        "sent",
+    ),
+    TurnCategory(
+        "other",
+        "unrelated to returns/complaints/delivery — pricing, promotions, general questions, "
+        "anything out of scope for after-sales support",
+    ),
+]
 
 _CATEGORY_TO_INTENT = {
     "return_request": "return",
@@ -39,7 +67,7 @@ async def qualification_node(state: dict) -> dict:
     combined_message = "\n".join(context) if context else latest
 
     try:
-        category = await classify_message(combined_message)
+        interpretation = await interpret_turn(combined_message, INTENT_CONTEXT, INTENT_CATEGORIES)
     except TechnicalFailure:
         return {
             **state,
@@ -49,7 +77,7 @@ async def qualification_node(state: dict) -> dict:
             "reply": "J'ai des difficultés à traiter votre demande en ce moment — je vous transfère à un collègue.",
         }
 
-    result = route_by_category({**state, "_qualification_context": context}, category)
+    result = route_interpretation(state, interpretation)
     # A definite classification (intent set) means the buffered pre-identification content
     # has served its purpose — clear it so it can't leak into a later, unrelated request in
     # the same session. Still ambiguous -> keep accumulating for the next clarification round.
@@ -57,55 +85,78 @@ async def qualification_node(state: dict) -> dict:
     return result
 
 
-def route_by_category(state: dict, category: str) -> dict:
-    """Everything qualification_node does once a category is known — factored out so
-    confirmation_node can reuse it for a new/unrelated request classified after a case has
-    already been closed, reusing the classify_message call it already made instead of a
-    second one (see confirmation.py)."""
-    message = state.get("_latest_message", "")
-
-    if category == "other":
-        reply = (
-            "Cela sort un peu de ce que je peux traiter ici — je m'occupe des retours et "
-            "des réclamations qualité. Pour cette question, notre service client habituel "
-            "sera mieux placé pour vous répondre."
-        )
-        return {**state, "intent": "other", "current_state": "QUALIFICATION", "reply": reply}
-
-    if category == "non_delivery":
-        # Return Policy §12/§9: a non-delivery claim has no physical item to return, so it
-        # must never flow into the standard return/complaint reason pipeline. Routes into
-        # COMPLAINT_FLOW (same as a quality complaint) but pre-marks it as already past its
-        # one verification round — complaint_flow_node's own _non_delivery_checked branch
-        # (constitution V.4) then always escalates the customer's next reply, rather than
-        # ever reaching VERIFICATION/DECISION/AUTO_ACTION's return-label pipeline.
-        reply = (
-            "Je suis désolée de l'apprendre. Avant d'aller plus loin, pourriez-vous "
-            "vérifier auprès des personnes de votre foyer, de la réception de votre "
-            "immeuble ou de vos voisins, au cas où le colis aurait été réceptionné par "
-            "quelqu'un d'autre ?"
-        )
+def route_interpretation(state: dict, interpretation: TurnInterpretation) -> dict:
+    """Everything qualification_node does once a TurnInterpretation is known — factored out
+    so confirmation_node can reuse it for a new/unrelated request classified after a case has
+    already been closed, reusing the interpret_turn call it already made instead of a second
+    one (see confirmation.py)."""
+    if interpretation.signal in ("closing", "resolved"):
+        # Nothing has been established yet at this point (no case, no escalation) — either
+        # signal means the same thing here: end warmly, nothing left to do.
         return {
             **state,
-            "intent": "complaint",
-            "reason": "not_received",
-            "_non_delivery_checked": True,
             "current_state": "QUALIFICATION",
-            "reply": reply,
+            "reply": "Avec plaisir ! N'hésitez pas à revenir vers nous si vous avez besoin d'autre chose.",
+            "_session_ended": True,
         }
 
-    intent = _CATEGORY_TO_INTENT.get(category)
-    if intent in ("return", "complaint"):
-        reply = (
-            "Compris — il semble que vous souhaitiez faire un retour. "
-            if intent == "return"
-            else "Je suis désolée de l'apprendre — voyons comment régler cela. "
-        ) + "Pourriez-vous m'en dire plus sur la raison ?"
-        return {**state, "intent": intent, "current_state": "QUALIFICATION", "reply": reply}
+    if interpretation.signal == "case_status_question":
+        return {
+            **state,
+            "current_state": "QUALIFICATION",
+            "reply": (
+                "Je ne vois pas encore de demande en cours pour vous — dites-moi ce dont "
+                "vous avez besoin (un retour ou un problème avec un article reçu) et je "
+                "m'en occupe."
+            ),
+        }
 
-    # category == "ambiguous" (or an unrecognized value) -> ask a clarifying question, up to
-    # MAX_CLARIFICATIONS times (FR-003), then escalate. Logged at each step so real
-    # ambiguous phrasing patterns can be reviewed over time.
+    if interpretation.signal == "on_topic":
+        category = interpretation.category
+
+        if category == "other":
+            reply = (
+                "Cela sort un peu de ce que je peux traiter ici — je m'occupe des retours et "
+                "des réclamations qualité. Pour cette question, notre service client habituel "
+                "sera mieux placé pour vous répondre."
+            )
+            return {**state, "intent": "other", "current_state": "QUALIFICATION", "reply": reply}
+
+        if category == "non_delivery":
+            # Return Policy §12/§9: a non-delivery claim has no physical item to return, so
+            # it must never flow into the standard return/complaint reason pipeline. Routes
+            # into COMPLAINT_FLOW (same as a quality complaint) but pre-marks it as already
+            # past its one verification round — complaint_flow_node's own
+            # _non_delivery_checked branch (constitution V.4) then decides from there rather
+            # than ever reaching VERIFICATION/DECISION/AUTO_ACTION's return-label pipeline.
+            reply = (
+                "Je suis désolée de l'apprendre. Avant d'aller plus loin, pourriez-vous "
+                "vérifier auprès des personnes de votre foyer, de la réception de votre "
+                "immeuble ou de vos voisins, au cas où le colis aurait été réceptionné par "
+                "quelqu'un d'autre ?"
+            )
+            return {
+                **state,
+                "intent": "complaint",
+                "reason": "not_received",
+                "_non_delivery_checked": True,
+                "current_state": "QUALIFICATION",
+                "reply": reply,
+            }
+
+        intent = _CATEGORY_TO_INTENT.get(category)
+        if intent in ("return", "complaint"):
+            reply = (
+                "Compris — il semble que vous souhaitiez faire un retour. "
+                if intent == "return"
+                else "Je suis désolée de l'apprendre — voyons comment régler cela. "
+            ) + "Pourriez-vous m'en dire plus sur la raison ?"
+            return {**state, "intent": intent, "current_state": "QUALIFICATION", "reply": reply}
+
+    # ambiguous (or on_topic with a category outside what's mapped above, defensively) -> ask
+    # a clarifying question, up to MAX_CLARIFICATIONS times (FR-003), then escalate. Logged
+    # at each step so real ambiguous phrasing patterns can be reviewed over time.
+    message = state.get("_latest_message", "")
     reformulations = state.get("reformulation_count", 0) + 1
     logger.warning("QUALIFICATION_AMBIGUOUS message=%r reformulation=%d", message, reformulations)
     if reformulations <= MAX_CLARIFICATIONS:
@@ -131,11 +182,13 @@ def route_by_category(state: dict, category: str) -> dict:
 
 
 def route_intent(state: dict) -> str:
-    """Decides the next node from qualification's output (intent/escalated) — shared by
-    graph.py's _route_after_qualification and confirmation.py's post-resolution re-entry, so
-    both apply the exact same transition rules instead of duplicating them."""
+    """Decides the next node from qualification's output (intent/escalated/_session_ended) —
+    shared by graph.py's _route_after_qualification and confirmation.py's post-resolution
+    re-entry, so both apply the exact same transition rules instead of duplicating them."""
     if state.get("escalated"):
         return "ESCALATION"
+    if state.get("_session_ended"):
+        return "CONFIRMATION"
     intent = state.get("intent")
     if intent == "return":
         return "RETURN_FLOW"
