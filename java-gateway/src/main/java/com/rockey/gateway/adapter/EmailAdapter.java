@@ -92,29 +92,34 @@ public class EmailAdapter {
     }
 
     public String formatOutboundSubject(String caseId) {
-        return "Re: Your customer service request — Case #" + (caseId != null ? caseId : "pending");
+        return "Re : Votre demande de service client — Dossier #" + (caseId != null ? caseId : "en attente");
     }
 
     /** HTML body per constitution I.4b: "formatted HTML ... formal tone, complete summary",
      * vs. the Web Widget's terse raw-JSON reply (spec User Story 7 AC3 — same decision,
      * different formatting per channel). The PDF attachment itself is handled by
      * EmailController (it needs the JavaMailSender's MimeMessageHelper, not a pure string
-     * builder). */
+     * builder).
+     *
+     * French wrapper text (constitution I.7 / the POC's French-only decision): the agent's
+     * own reply text is always already French, but this wrapper around it — greeting,
+     * case-reference label, attachment note, signature — was still hardcoded in English,
+     * the one piece of the customer-facing email surface that hadn't been translated. */
     public String formatOutboundHtml(AgentResponse response) {
         StringBuilder html = new StringBuilder("<html><body>");
-        html.append("<p>Hello,</p>");
+        html.append("<p>Bonjour,</p>");
         html.append("<p>").append(escapeHtml(response.reply())).append("</p>");
         if (response.caseId() != null) {
-            html.append("<p>Case reference: ").append(escapeHtml(response.caseId())).append("</p>");
+            html.append("<p>Référence du dossier : ").append(escapeHtml(response.caseId())).append("</p>");
         }
         if (response.attachments() != null) {
             for (AgentResponse.Attachment attachment : response.attachments()) {
                 if ("return_label".equals(attachment.type())) {
-                    html.append("<p>Your return label is attached to this email.</p>");
+                    html.append("<p>Votre étiquette de retour est jointe à cet email.</p>");
                 }
             }
         }
-        html.append("<p>Best regards,<br/>Your customer service team</p>");
+        html.append("<p>Cordialement,<br/>L'équipe du service client</p>");
         html.append("</body></html>");
         return html.toString();
     }

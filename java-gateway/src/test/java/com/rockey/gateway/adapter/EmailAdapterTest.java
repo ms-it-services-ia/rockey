@@ -129,7 +129,7 @@ class EmailAdapterTest {
 
         assertThat(html).contains("Your return has been approved.");
         assertThat(html).contains("RET-abcd1234");
-        assertThat(html).contains("attached to this email");
+        assertThat(html).contains("jointe à cet email");
     }
 
     @Test

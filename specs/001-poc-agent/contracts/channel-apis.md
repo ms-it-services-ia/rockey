@@ -27,7 +27,9 @@ message becomes one internal-format request; `client_id` = the email `Message-ID
 
 Outbound: SMTP reply to the original sender.
 - Format: HTML, using the retailer's branding.
-- Subject: `Re: Your customer service request — Case #{case_id}`.
+- Subject: `Re : Votre demande de service client — Dossier #{case_id}` (French — the POC settled
+  on French-only for the whole customer-facing surface, including the email wrapper text
+  around the agent's reply, not just the reply itself).
 - Return label, if present in `attachments`, is attached as a PDF (constitution I.4b).
 
 ## Slack (escalation only — outbound, never inbound)
