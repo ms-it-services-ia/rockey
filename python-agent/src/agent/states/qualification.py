@@ -56,9 +56,16 @@ def append_context(state: dict, message: str) -> list[str]:
     """Buffers a customer message that couldn't be classified yet (GREETING/IDENTIFICATION
     run before any intent classification happens, constitution V.2) so qualification_node
     can classify everything the customer actually said, not just whichever message happens
-    to arrive once identification finally succeeds."""
+    to arrive once identification finally succeeds.
+
+    Idempotent on the last entry: when identification succeeds, graph.py's run_turn
+    continues straight into qualification_node in the same turn without a new customer
+    message in between — identification.py already appended `_latest_message` itself, so
+    qualification_node calling this again on the exact same message must not duplicate it."""
     context = state.get("_qualification_context", [])
-    return [*context, message] if message else context
+    if not message or (context and context[-1] == message):
+        return context
+    return [*context, message]
 
 
 async def qualification_node(state: dict) -> dict:

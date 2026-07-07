@@ -277,6 +277,10 @@ async def run_turn(state: dict) -> dict:
     function both dispatch to the exact same functions.
     """
     current = state.get("current_state") or "GREETING"
+    # Captured when IDENTIFICATION succeeds and the turn continues straight into
+    # QUALIFICATION (see the check below) so it can be prepended to whatever reply the
+    # cascade eventually produces, instead of being silently discarded.
+    identification_reply: str | None = None
 
     while True:
         state = await _NODES[current](state)
@@ -288,12 +292,28 @@ async def run_turn(state: dict) -> dict:
         )
         state["current_state"] = next_state
 
+        # Successful identification always transitions to QUALIFICATION — but the customer
+        # may have already stated their actual request before identification succeeded
+        # (buffered into _qualification_context by greeting.py/identification.py — see
+        # qualification.py). Continue straight into QUALIFICATION this same turn so it
+        # classifies that buffered content immediately, instead of pausing to ask "how can I
+        # help?" as if nothing had been said yet.
+        if current == "IDENTIFICATION" and next_state == "QUALIFICATION":
+            identification_reply = state.get("reply")
+            current = next_state
+            continue
+
         # next_state == current covers CONFIRMATION's self-loop: it must run immediately
         # the first time it's entered (e.g. from AUTO_ACTION, a different `current`) to
         # compose the final reply in the same turn, but must never re-run itself
         # automatically afterward on unchanged input once _route_after_confirmation decides
         # the turn is actually done — see confirmation.py.
         if next_state == current or next_state in _REQUIRES_FRESH_INPUT:
+            if identification_reply:
+                # Keep identification's own acknowledgment ("Merci, X ! Je vois bien votre
+                # commande...") instead of letting it be silently overwritten by whatever
+                # this cascade's final reply is.
+                state["reply"] = f"{identification_reply} {state.get('reply', '')}".strip()
             return state
 
         current = next_state

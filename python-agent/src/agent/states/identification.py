@@ -91,10 +91,11 @@ async def identification_node(state: dict) -> dict:
             ),
         }
 
-    reply = (
-        f"Merci, {order_data['clientName']} ! Je vois bien votre commande pour "
-        f"{order_data['articleId']}. Comment puis-je vous aider ?"
-    )
+    # No "comment puis-je vous aider ?" tail: run_turn always continues straight into
+    # QUALIFICATION in the same turn once identification succeeds (see graph.py), so this
+    # reply is always immediately followed by the actual classification result — asking how
+    # to help right before answering that exact question would be redundant.
+    reply = f"Merci, {order_data['clientName']} ! Je vois bien votre commande pour {order_data['articleId']}."
     return {
         **state,
         "client_email": email,
