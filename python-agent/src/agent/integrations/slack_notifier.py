@@ -4,6 +4,12 @@ Called directly by the Python Agent via the Slack MCP — the Java Gateway is ne
 in the Slack send (see plan.md's Structure Decision and the I1 finding from /speckit-analyze).
 If SLACK_MCP_TOKEN is absent, the notification is skipped with a warning log rather than
 failing the escalation itself (contracts/channel-apis.md).
+
+Slack's chat.postMessage returns HTTP 200 even when the post itself failed (e.g.
+"channel_not_found", "not_in_channel", "invalid_auth") — the actual outcome is only in the
+JSON body's `ok` field, never the HTTP status. `response.raise_for_status()` alone would
+silently treat that as success (a real escalation would then have no Slack notification and
+no warning telling anyone why), so `ok` is checked explicitly below.
 """
 
 import logging
@@ -77,3 +83,15 @@ async def send_escalation_notification(
             json={"channel": slack_channel, "blocks": blocks, "text": summary},
         )
         response.raise_for_status()
+
+        body = response.json()
+        if not body.get("ok"):
+            # Same "never block/fail the escalation" contract as the missing-token case
+            # above — the ticket already exists, the customer already has an honest reply;
+            # only the Slack notification itself failed, and silently is not an option.
+            logger.warning(
+                "Slack chat.postMessage returned ok=false for order %s (channel=%s): %s",
+                order_id,
+                slack_channel,
+                body.get("error", "unknown_error"),
+            )
