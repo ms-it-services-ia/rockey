@@ -110,6 +110,9 @@ async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_aut
     with (
         patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("on_topic", "not_received")),
         patch(
+            "agent.states.complaint_flow.already_verified_from_message", new=AsyncMock(return_value=False)
+        ),
+        patch(
             "agent.states.complaint_flow.get_article_by_id",
             new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
         ),
@@ -131,6 +134,37 @@ async def test_non_delivery_complaint_asks_to_verify_before_escalating_never_aut
     assert second["escalated"] is True
     assert second["escalation_reason"] == "non_delivery_claim"
     assert second["reason"] == "not_received"
+
+
+@pytest.mark.asyncio
+async def test_non_delivery_already_verified_in_the_complaint_description_escalates_directly():
+    """Regression test: a customer whose complaint description already states they checked
+    with household/neighbors and it's genuinely missing must not be asked the same
+    verification question again."""
+    state = _complaint_state(
+        _latest_message=(
+            "Le suivi indique livré dans ma boîte aux lettres mais je ne l'ai jamais reçu. "
+            "J'ai vérifié ma boîte aux lettres et autour de mon domicile, introuvable."
+        )
+    )
+
+    with (
+        patch("agent.states.complaint_flow.interpret_turn", new=_mock_interpret("on_topic", "not_received")),
+        patch(
+            "agent.states.complaint_flow.already_verified_from_message", new=AsyncMock(return_value=True)
+        ),
+        patch(
+            "agent.states.complaint_flow.get_article_by_id",
+            new=AsyncMock(return_value={"id": "VTG-012", "returnable": True, "non_return_reason": None}),
+        ),
+    ):
+        result = await complaint_flow_node(state)
+
+    assert result["reason"] == "not_received"
+    assert result["escalated"] is True
+    assert result["escalation_reason"] == "non_delivery_claim"
+    assert not result.get("_non_delivery_checked")
+    assert "déjà vérifié" in result["reply"]
 
 
 @pytest.mark.asyncio

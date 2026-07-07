@@ -10,6 +10,7 @@ EligibilityService.
 
 import logging
 
+from agent.states.complaint_flow import already_verified_from_message
 from agent.tools.interpret_turn import TurnCategory, TurnInterpretation, interpret_turn
 from config.circuit_breaker import TechnicalFailure
 
@@ -84,7 +85,7 @@ async def qualification_node(state: dict) -> dict:
             "reply": "J'ai des difficultés à traiter votre demande en ce moment — je vous transfère à un collègue.",
         }
 
-    result = route_interpretation(state, interpretation)
+    result = await route_interpretation(state, interpretation, combined_message)
     # A definite classification (intent set) means the buffered pre-identification content
     # has served its purpose — clear it so it can't leak into a later, unrelated request in
     # the same session. Still ambiguous -> keep accumulating for the next clarification round.
@@ -92,11 +93,13 @@ async def qualification_node(state: dict) -> dict:
     return result
 
 
-def route_interpretation(state: dict, interpretation: TurnInterpretation) -> dict:
+async def route_interpretation(state: dict, interpretation: TurnInterpretation, message: str) -> dict:
     """Everything qualification_node does once a TurnInterpretation is known — factored out
     so confirmation_node can reuse it for a new/unrelated request classified after a case has
     already been closed, reusing the interpret_turn call it already made instead of a second
-    one (see confirmation.py)."""
+    one (see confirmation.py). `message` is the full text to classify against for any
+    secondary check within a branch (qualification_node passes its buffered combined
+    message, so an "already verified" statement made before identification is still seen)."""
     if interpretation.signal in ("closing", "resolved"):
         # Nothing has been established yet at this point (no case, no escalation) — either
         # signal means the same thing here: end warmly, nothing left to do.
@@ -131,11 +134,31 @@ def route_interpretation(state: dict, interpretation: TurnInterpretation) -> dic
 
         if category == "non_delivery":
             # Return Policy §12/§9: a non-delivery claim has no physical item to return, so
-            # it must never flow into the standard return/complaint reason pipeline. Routes
-            # into COMPLAINT_FLOW (same as a quality complaint) but pre-marks it as already
-            # past its one verification round — complaint_flow_node's own
-            # _non_delivery_checked branch (constitution V.4) then decides from there rather
-            # than ever reaching VERIFICATION/DECISION/AUTO_ACTION's return-label pipeline.
+            # it must never flow into the standard return/complaint reason pipeline.
+            if await already_verified_from_message(message):
+                # The customer already said, unprompted, that they checked and it's still
+                # missing (often stated in the very first message, before identification —
+                # see qualification.py's _qualification_context buffer) — asking again would
+                # ignore what they just told us, so skip straight to escalation.
+                return {
+                    **state,
+                    "intent": "complaint",
+                    "reason": "not_received",
+                    "escalated": True,
+                    "escalation_reason": "non_delivery_claim",
+                    "current_state": "QUALIFICATION",
+                    "reply": (
+                        "Je suis désolée de l'apprendre. Puisque vous avez déjà vérifié "
+                        "auprès de votre foyer et de vos voisins, je transmets directement "
+                        "votre dossier à un collègue pour investiguer et trouver la "
+                        "meilleure solution."
+                    ),
+                }
+            # Otherwise: routes into COMPLAINT_FLOW (same as a quality complaint) but
+            # pre-marks it as already past its one verification round —
+            # complaint_flow_node's own _non_delivery_checked branch (constitution V.4)
+            # then decides from there rather than ever reaching VERIFICATION/DECISION/
+            # AUTO_ACTION's return-label pipeline.
             reply = (
                 "Je suis désolée de l'apprendre. Avant d'aller plus loin, pourriez-vous "
                 "vérifier auprès des personnes de votre foyer, de la réception de votre "
@@ -163,7 +186,6 @@ def route_interpretation(state: dict, interpretation: TurnInterpretation) -> dic
     # ambiguous (or on_topic with a category outside what's mapped above, defensively) -> ask
     # a clarifying question, up to MAX_CLARIFICATIONS times (FR-003), then escalate. Logged
     # at each step so real ambiguous phrasing patterns can be reviewed over time.
-    message = state.get("_latest_message", "")
     reformulations = state.get("reformulation_count", 0) + 1
     logger.warning("QUALIFICATION_AMBIGUOUS message=%r reformulation=%d", message, reformulations)
     if reformulations <= MAX_CLARIFICATIONS:

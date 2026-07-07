@@ -138,7 +138,7 @@ async def confirmation_node(state: dict) -> dict:
         # (constitution V.3: never let a new request slide through unclassified). Reset and
         # hand off to the exact same routing qualification_node uses, reusing the
         # interpretation already computed above instead of a second LLM call.
-        result = route_interpretation({**state, **_RESET_FOR_NEW_REQUEST}, interpretation)
+        result = await route_interpretation({**state, **_RESET_FOR_NEW_REQUEST}, interpretation, message)
         next_state = route_intent(result)
         result["current_state"] = next_state
         if next_state == "QUALIFICATION":

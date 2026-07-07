@@ -45,12 +45,12 @@ _REASON_CATEGORIES = [
     TurnCategory("other", "a genuine, understood quality issue that just doesn't fit any of the above categories"),
 ]
 
-_VERIFICATION_CONTEXT = (
+VERIFICATION_CONTEXT = (
     "The customer was asked to check with household members, building reception, or "
     "neighbors for a package they say never arrived, and is now replying."
 )
 
-_VERIFICATION_CATEGORIES = [
+VERIFICATION_CATEGORIES = [
     TurnCategory("confirmed_not_found", "checked (or already knew for certain) and the package genuinely isn't there"),
     TurnCategory("not_yet_checked", "hasn't completed the verification yet — hasn't checked, will check later"),
 ]
@@ -62,6 +62,54 @@ _VERIFICATION_ESCALATION_REPLY = (
 
 _NO_LONGER_AN_ISSUE_REPLY = "Je suis ravie de l'apprendre ! N'hésitez pas si vous avez besoin d'autre chose."
 
+# Deliberately separate from VERIFICATION_CONTEXT/VERIFICATION_CATEGORIES above: those assume
+# the household/neighbors question was actually asked and the customer is now replying to it
+# — reusing that premise for already_verified_from_message's *proactive* check (nothing was
+# asked yet) biased the LLM into reading a bare "my package never arrived" as if it already
+# confirmed a completed check, when it hadn't mentioned checking at all.
+_UNPROMPTED_VERIFICATION_CONTEXT = (
+    "The customer is describing a package they say never arrived. No one has asked them "
+    "yet whether they checked with household members, building reception, or neighbors — "
+    "determine only whether they already volunteered that information unprompted."
+)
+
+_UNPROMPTED_VERIFICATION_CATEGORIES = [
+    TurnCategory(
+        "confirmed_not_found",
+        "the message states they already made a genuine effort to locate the package — "
+        "checking their mailbox, around their home/building, with household members, "
+        "building reception, or neighbors — and it's confirmed genuinely missing. Does "
+        "not require every single one of those specific people/places to be named; "
+        "checking their mailbox and around their home already counts",
+    ),
+    TurnCategory(
+        "not_yet_checked",
+        "the message does not mention having looked for or checked on the package at "
+        "all, or explicitly says they haven't yet — this is the default when "
+        "verification simply isn't mentioned",
+    ),
+]
+
+
+async def already_verified_from_message(message: str) -> bool:
+    """True if the message already states, unprompted, that the customer checked with their
+    household/neighbors and the package is confirmed missing — used to skip re-asking the
+    verification question when the customer volunteered the answer before it was even asked
+    (e.g. in their initial message, before identification even completed — see
+    qualification.py).
+
+    A technical failure here is not escalation-worthy on its own: the caller's primary
+    classification already succeeded, so falling back to asking the question normally is a
+    safe, non-breaking degradation — this only decides whether to skip a question, not
+    whether to escalate, so there is nothing to silently guess about the actual claim."""
+    try:
+        interpretation = await interpret_turn(
+            message, _UNPROMPTED_VERIFICATION_CONTEXT, _UNPROMPTED_VERIFICATION_CATEGORIES
+        )
+    except TechnicalFailure:
+        return False
+    return interpretation.signal == "on_topic" and interpretation.category == "confirmed_not_found"
+
 
 async def complaint_flow_node(state: dict) -> dict:
     message = state.get("_latest_message", "")
@@ -71,7 +119,7 @@ async def complaint_flow_node(state: dict) -> dict:
     # not be re-classified from scratch.
     if state.get("_non_delivery_checked"):
         try:
-            interpretation = await interpret_turn(message, _VERIFICATION_CONTEXT, _VERIFICATION_CATEGORIES)
+            interpretation = await interpret_turn(message, VERIFICATION_CONTEXT, VERIFICATION_CATEGORIES)
         except TechnicalFailure:
             return {
                 **state,
@@ -230,6 +278,26 @@ async def complaint_flow_node(state: dict) -> dict:
     # genuine claim, which then always needs human investigation (constitution V.4) — never
     # a threshold-based auto-decision the way a normal complaint amount would get.
     if reason == "not_received":
+        if await already_verified_from_message(message):
+            # The customer already said, unprompted, that they checked and it's still
+            # missing — asking again would ignore what they just told us (Return Policy §12
+            # still always routes this to human investigation, just without a redundant
+            # round-trip first).
+            return {
+                **state,
+                "reason": reason,
+                "complaint_description": message,
+                "article_data": article_data,
+                "escalated": True,
+                "escalation_reason": "non_delivery_claim",
+                "current_state": "COMPLAINT_FLOW",
+                "reply": (
+                    "Je suis désolée de l'apprendre. Puisque vous avez déjà vérifié auprès "
+                    "de votre foyer et de vos voisins, je transmets directement votre "
+                    "dossier à un collègue pour investiguer et trouver la meilleure "
+                    "solution."
+                ),
+            }
         return {
             **state,
             "reason": reason,
